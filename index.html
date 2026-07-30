@@ -310,21 +310,27 @@
             useEffect(() => {
                 if (status !== 'ready') return;
                 const { onAuthStateChanged } = window.FB_Auth;
-                const unsub = onAuthStateChanged(window.auth, async (firebaseUser) => {
+                
+                const unsub = onAuthStateChanged(window.auth, (firebaseUser) => {
                     if (firebaseUser) {
                         const email = firebaseUser.email.toLowerCase();
                         const displayName = firebaseUser.displayName || email.split('@')[0];
                         const loggedUser = { username: email, displayName, photoURL: firebaseUser.photoURL };
                         
+                        // Мгновенно переключаем экран и авторизуем пользователя
+                        setUser(loggedUser);
+
+                        // Обновляем статус в базе данных в фоновом режиме (без await)
                         const { doc, setDoc } = window.FB_Fns;
-                        await setDoc(doc(window.db, "users", email), {
+                        setDoc(doc(window.db, "users", email), {
                             username: email,
                             displayName: displayName,
                             photoURL: firebaseUser.photoURL,
                             online: true
-                        }, { merge: true }).catch(() => {});
+                        }, { merge: true }).catch((err) => {
+                            console.error("Ошибка записи пользователя в БД:", err);
+                        });
 
-                        setUser(loggedUser);
                     } else {
                         setUser(null);
                     }
@@ -415,7 +421,6 @@
                     await signInWithPopup(window.auth, provider);
                 } catch (err) {
                     setAuthError('Ошибка авторизации Google: ' + err.message);
-                } finally {
                     setAuthBusy(false);
                 }
             };
