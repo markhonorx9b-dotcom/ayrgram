@@ -295,9 +295,24 @@
             const typingTimeoutRef = useRef(null);
 
             useEffect(() => {
-                const onReady = () => setStatus('ready');
-                const onMissing = () => setStatus('missing-config');
-                window.addEventListener('firebase-ready', onReady);
+
+    if (window.db && window.auth) {
+        setStatus('ready');
+        return;
+    }
+
+    const onReady = () => setStatus('ready');
+    const onMissing = () => setStatus('missing-config');
+
+    window.addEventListener('firebase-ready', onReady);
+    window.addEventListener('firebase-config-missing', onMissing);
+
+    return () => {
+        window.removeEventListener('firebase-ready', onReady);
+        window.removeEventListener('firebase-config-missing', onMissing);
+    };
+
+}, []);
                 window.addEventListener('firebase-config-missing', onMissing);
                 if (window.db) onReady();
                 return () => {
