@@ -275,7 +275,6 @@
         );
 
         const App = () => {
-            // Мгновенно проверяем, инициализирован ли Firebase, чтобы избежать бесконечного экрана загрузки
             const [status, setStatus] = useState(() => (window.db && window.auth ? 'ready' : 'loading'));
             const [authInitialized, setAuthInitialized] = useState(false);
             const [user, setUser] = useState(null);
@@ -312,7 +311,6 @@
                 window.addEventListener('firebase-ready', onReady);
                 window.addEventListener('firebase-config-missing', onMissing);
 
-                // Защитный таймер (Fallback): если через 3 секунды Firebase не ответил, выходим из загрузки
                 const timer = setTimeout(() => {
                     if (status === 'loading') {
                         if (window.db) setStatus('ready');
@@ -327,13 +325,15 @@
                 };
             }, []);
 
-            // Firebase Auth Listener + редирект результирующий чек
+            // Обработка авторизации и редиректа Google
             useEffect(() => {
                 if (status !== 'ready') return;
                 const { onAuthStateChanged, getRedirectResult } = window.FB_Auth;
-                
+
+                // Проверяем результат возврата после редиректа
                 getRedirectResult(window.auth).catch((err) => {
-                    console.error("Ошибка редиректа:", err);
+                    console.error("Ошибка редиректа аутентификации:", err);
+                    setAuthError("Не удалось завершить вход через редирект: " + err.message);
                 });
 
                 const unsub = onAuthStateChanged(window.auth, (firebaseUser) => {
@@ -441,13 +441,16 @@
                 try {
                     const { signInWithPopup, GoogleAuthProvider, signInWithRedirect } = window.FB_Auth;
                     const provider = new GoogleAuthProvider();
+                    
+                    // Пытаемся сначала открыть popup, если браузер блокирует или ошибка — делаем redirect
                     try {
                         await signInWithPopup(window.auth, provider);
                     } catch (popupErr) {
+                        console.warn("Popup заблокирован или недоступен, пробуем через редирект:", popupErr);
                         await signInWithRedirect(window.auth, provider);
                     }
                 } catch (err) {
-                    setAuthError('Ошибка Google: ' + err.code + " | " + err.message);
+                    setAuthError('Ошибка авторизации: ' + (err.message || err.code));
                     console.error(err);
                     setAuthBusy(false);
                 }
