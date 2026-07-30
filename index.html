@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirGram — защищённый мессенджер «Зеркало-3»</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { bg: '#0b1120', panel: '#141b2d', bubble: '#1e2a45', line: '#22304a' },
+                        brand: { DEFAULT: '#4f7cff', hover: '#3c63e6', soft: '#1c2440' },
+                        cipher: { DEFAULT: '#37e2b0', dim: '#1f6f57' }
+                    },
+                    fontFamily: {
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase SDK (Modular) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import {
+            getFirestore, collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
+            onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Конфигурация Firebase интегрирована
+        const firebaseConfig = {
+            apiKey: "AIzaSyCavGRCy4hsLr7_8Onj-TM21xaAd_Vkh2c",
+            authDomain: "airgram-66933.firebaseapp.com",
+            projectId: "airgram-66933",
+            storageBucket: "airgram-66933.firebasestorage.app",
+            messagingSenderId: "876946365615",
+            appId: "1:876946365615:web:34e5d21fc36d4aa6cf085a",
+            
+        };
+
+        const isConfigured = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
+        if (isConfigured) {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            window.db = db;
+            window.FB_Fns = {
+                collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
+                onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
+            };
+            window.dispatchEvent(new Event('firebase-ready'));
+        } else {
+            window.dispatchEvent(new Event('firebase-config-missing'));
+        }
+    </script>
+
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2c3b5c; border-radius: 4px; }
+        body { background-color: #0b1120; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
+
+        @keyframes popIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+        .animate-pop { animation: popIn 0.18s ease-out forwards; }
+
+        @keyframes pulseDot { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+        .dot-typing { animation: pulseDot 1s ease-in-out infinite; }
+        .dot-typing:nth-child(2) { animation-delay: 0.15s; }
+        .dot-typing:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes decipher {
+            0% { filter: blur(2px); opacity: 0.35; letter-spacing: 0.12em; }
+            100% { filter: blur(0); opacity: 1; letter-spacing: normal; }
+        }
+        .animate-decipher { animation: decipher 0.35s ease-out forwards; }
+
+        .scrollbar-none::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        const QWERTY_LEFT = {
+            'q': 'p', 'w': 'q', 'e': 'w', 'r': 'e', 't': 'r', 'y': 't', 'u': 'y', 'i': 'u', 'o': 'i', 'p': 'o',
+            'a': 'l', 's': 'a', 'd': 's', 'f': 'd', 'g': 'f', 'h': 'g', 'j': 'h', 'k': 'j', 'l': 'k',
+            'z': 'm', 'x': 'z', 'c': 'x', 'v': 'c', 'b': 'v', 'n': 'b', 'm': 'n'
+        };
+        const QWERTY_RIGHT = {
+            'p': 'q', 'q': 'w', 'w': 'e', 'e': 'r', 'r': 't', 't': 'y', 'y': 'u', 'u': 'i', 'i': 'o', 'o': 'p',
+            'l': 'a', 'a': 's', 's': 'd', 'd': 'f', 'f': 'g', 'g': 'h', 'h': 'j', 'j': 'k', 'k': 'l',
+            'm': 'z', 'z': 'x', 'x': 'c', 'c': 'v', 'v': 'b', 'b': 'n', 'n': 'm'
+        };
+
+        const TRANSLIT_MAP = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
+            'з': 'z', 'и': 'i', 'й': 'j', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+            'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c',
+            'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': "'q", 'ы': 'y', 'ь': "'x", 'э': 'eh', 'ю': 'yu', 'я': 'ya'
+        };
+
+        const REVERSE_TRANSLIT = {
+            "'q": 'ъ', "'x": 'ь',
+            'zh': 'ж', 'ch': 'ч', 'sh': 'ш', 'eh': 'э', 'yu': 'ю', 'ya': 'я',
+            'a': 'а', 'b': 'б', 'v': 'в', 'g': 'г', 'd': 'д', 'e': 'е', 'z': 'з', 'i': 'и',
+            'j': 'й', 'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'r': 'р',
+            's': 'с', 't': 'т', 'u': 'у', 'f': 'ф', 'h': 'х', 'c': 'ц', 'y': 'ы'
+        };
+
+        const decodeChunk = (str, i) => {
+            if (str.substr(i, 3) === 'sch') return { ch: 'щ', len: 3 };
+            const chunk2 = str.substr(i, 2);
+            if (REVERSE_TRANSLIT[chunk2]) return { ch: REVERSE_TRANSLIT[chunk2], len: 2 };
+            const chunk1 = str.substr(i, 1);
+            return { ch: REVERSE_TRANSLIT[chunk1] !== undefined ? REVERSE_TRANSLIT[chunk1] : chunk1, len: 1 };
+        };
+
+        const encryptMirror3 = (text) => {
+            return text.split(' ').map(word => {
+                if (!word) return word;
+                const reversed = Array.from(word).reverse().join('');
+                let trans = '';
+                for (const rawChar of reversed) {
+                    const char = rawChar.toLowerCase();
+                    trans += TRANSLIT_MAP[char] !== undefined ? TRANSLIT_MAP[char] : char;
+                }
+                let shifted = '';
+                for (const rawChar of trans) {
+                    const char = rawChar.toLowerCase();
+                    shifted += QWERTY_LEFT[char] !== undefined ? QWERTY_LEFT[char] : char;
+                }
+                return shifted;
+            }).join(' ');
+        };
+
+        const decryptMirror3 = (text) => {
+            return text.split(' ').map(word => {
+                if (!word) return word;
+                let unshifted = '';
+                for (const rawChar of word) {
+                    const char = rawChar.toLowerCase();
+                    unshifted += QWERTY_RIGHT[char] !== undefined ? QWERTY_RIGHT[char] : char;
+                }
+                let cyrillic = '';
+                let i = 0;
+                while (i < unshifted.length) {
+                    const { ch, len } = decodeChunk(unshifted, i);
+                    cyrillic += ch;
+                    i += len;
+                }
+                return Array.from(cyrillic).reverse().join('');
+            }).join(' ');
+        };
+
+        const bufferToHex = (buffer) =>
+            Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const generateSalt = () => bufferToHex(crypto.getRandomValues(new Uint8Array(16)));
+
+        const hashPassword = async (password, salt) => {
+            const data = new TextEncoder().encode(salt + ':' + password);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return bufferToHex(digest);
+        };
+
+        const AVATAR_PALETTE = [
+            'bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-emerald-500',
+            'bg-teal-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-fuchsia-500'
+        ];
+        const avatarColor = (name) => {
+            let hash = 0;
+            for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+            return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+        };
+
+        const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+        const MAX_MESSAGE_LEN = 1000;
+
+        const dateKeyOf = (d) => d.toISOString().slice(0, 10);
+        const formatDayLabel = (dateKey) => {
+            const today = dateKeyOf(new Date());
+            const yesterday = dateKeyOf(new Date(Date.now() - 86400000));
+            if (dateKey === today) return 'Сегодня';
+            if (dateKey === yesterday) return 'Вчера';
+            const [y, m, d] = dateKey.split('-');
+            return `${d}.${m}.${y}`;
+        };
+
+        const timeAgo = (ms) => {
+            if (!ms) return 'давно';
+            const diff = Date.now() - ms;
+            if (diff < 60000) return 'только что';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)} мин назад`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)} ч назад`;
+            return `${Math.floor(diff / 86400000)} дн назад`;
+        };
+
+        const Avatar = ({ name, size = 10, online }) => (
+            <div className={`relative shrink-0 w-${size} h-${size}`}>
+                <div className={`w-full h-full rounded-full flex items-center justify-center font-bold text-white ${avatarColor(name)}`}>
+                    {String(name || '?').charAt(0).toUpperCase()}
+                </div>
+                {online !== undefined && (
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-dark-panel ${online ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                )}
+            </div>
+        );
+
+        const ErrorBanner = ({ message, onDismiss }) => {
+            if (!message) return null;
+            return (
+                <div className="bg-red-500/10 border border-red-500/40 text-red-300 px-3 py-2 rounded-xl text-sm mb-3 flex items-start justify-between gap-2 animate-pop">
+                    <span>{message}</span>
+                    {onDismiss && <button onClick={onDismiss} className="text-red-300/70 hover:text-red-200 leading-none">✕</button>}
+                </div>
+            );
+        };
+
+        const MessageBubble = ({ msg, isMine }) => {
+            const [revealed, setRevealed] = useState(!msg.isEncrypted);
+            const plaintext = useMemo(() => (msg.isEncrypted ? decryptMirror3(msg.text) : msg.text), [msg.text, msg.isEncrypted]);
+
+            return (
+                <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} group`}>
+                    <div className={`max-w-[78%] sm:max-w-[65%] px-4 py-2.5 rounded-2xl shadow-md ${isMine ? 'bg-brand text-white rounded-br-sm' : 'bg-dark-bubble text-slate-100 rounded-bl-sm border border-dark-line'}`}>
+                        {msg.isEncrypted && (
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-semibold text-cipher tracking-wide">🔒 ЗЕРКАЛО-3</span>
+                                <button
+                                    onClick={() => setRevealed(r => !r)}
+                                    className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 hover:bg-black/35 text-slate-200 transition-colors"
+                                >
+                                    {revealed ? 'Скрыть' : 'Расшифровать'}
+                                </button>
+                            </div>
+                        )}
+                        <p className={`text-sm break-words whitespace-pre-wrap ${msg.isEncrypted && !revealed ? 'font-mono text-cipher/90 tracking-wide' : ''} ${revealed ? 'animate-decipher' : ''}`}>
+                            {revealed ? plaintext : msg.text}
+                        </p>
+                        <div className={`flex items-center justify-end gap-1 text-[10px] mt-1 ${isMine ? 'text-blue-100/80' : 'text-slate-400'}`}>
+                            <span>{msg.time}</span>
+                            {isMine && <span title={msg.seen ? 'Прочитано' : 'Отправлено'}>{msg.seen ? '✓✓' : '✓'}</span>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const TypingIndicator = ({ name }) => (
+            <div className="flex items-center gap-2 px-4 py-1 text-xs text-slate-400 animate-pop">
+                <Avatar name={name} size={6} />
+                <div className="bg-dark-bubble border border-dark-line rounded-full px-3 py-1.5 flex gap-1">
+                    <span className="dot-typing w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+                    <span className="dot-typing w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+                    <span className="dot-typing w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+                </div>
+            </div>
+        );
+
+        const App = () => {
+            const [status, setStatus] = useState('loading');
+            const [user, setUser] = useState(null);
+
+            const [contacts, setContacts] = useState([]);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [searchResult, setSearchResult] = useState(null);
+            const [searchError, setSearchError] = useState('');
+
+            const [selectedChatUser, setSelectedChatUser] = useState(null);
+            const [chatUserProfile, setChatUserProfile] = useState(null);
+            const [messages, setMessages] = useState([]);
+            const [inputText, setInputText] = useState('');
+            const [isEncryptedMode, setIsEncryptedMode] = useState(true);
+            const [isSending, setIsSending] = useState(false);
+            const [peerTyping, setPeerTyping] = useState(false);
+            const [mobileView, setMobileView] = useState('list');
+
+            const [isRegistering, setIsRegistering] = useState(false);
+            const [usernameInput, setUsernameInput] = useState('');
+            const [passwordInput, setPasswordInput] = useState('');
+            const [authError, setAuthError] = useState('');
+            const [authBusy, setAuthBusy] = useState(false);
+
+            const messagesEndRef = useRef(null);
+            const typingTimeoutRef = useRef(null);
+
+            useEffect(() => {
+                const onReady = () => {
+                    setStatus('ready');
+                    const saved = localStorage.getItem('airgram_active_user');
+                    if (saved) {
+                        try { setUser(JSON.parse(saved)); } catch (_) {}
+                    }
+                };
+                const onMissing = () => setStatus('missing-config');
+                window.addEventListener('firebase-ready', onReady);
+                window.addEventListener('firebase-config-missing', onMissing);
+                if (window.db) onReady();
+                return () => {
+                    window.removeEventListener('firebase-ready', onReady);
+                    window.removeEventListener('firebase-config-missing', onMissing);
+                };
+            }, []);
+
+            useEffect(() => {
+                if (!user || status !== 'ready') return;
+                const { doc, setDoc, serverTimestamp } = window.FB_Fns;
+                const db = window.db;
+                const myRef = doc(db, "users", user.username);
+                const setOnline = (online) => setDoc(myRef, { online, lastSeenAt: serverTimestamp() }, { merge: true }).catch(() => {});
+                setOnline(true);
+                const onVisibility = () => setOnline(document.visibilityState === 'visible');
+                document.addEventListener('visibilitychange', onVisibility);
+                window.addEventListener('beforeunload', () => setOnline(false));
+                return () => {
+                    document.removeEventListener('visibilitychange', onVisibility);
+                    setOnline(false);
+                };
+            }, [user, status]);
+
+            useEffect(() => {
+                if (!user) return;
+                const { collection, query, orderBy, onSnapshot } = window.FB_Fns;
+                const db = window.db;
+                const q = query(collection(db, "users", user.username, "contacts"), orderBy("lastMessageAt", "desc"));
+                const unsub = onSnapshot(q, (snap) => {
+                    setContacts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                }, () => {});
+                return () => unsub();
+            }, [user]);
+
+            useEffect(() => {
+                if (!selectedChatUser) { setChatUserProfile(null); return; }
+                const { doc, onSnapshot } = window.FB_Fns;
+                const unsub = onSnapshot(doc(window.db, "users", selectedChatUser), (snap) => {
+                    setChatUserProfile(snap.exists() ? snap.data() : null);
+                }, () => {});
+                return () => unsub();
+            }, [selectedChatUser]);
+
+            useEffect(() => {
+                if (!user || !selectedChatUser) return;
+                const { doc, onSnapshot } = window.FB_Fns;
+                const chatId = [user.username, selectedChatUser].sort().join('_');
+                const unsub = onSnapshot(doc(window.db, "chats", chatId, "typing", selectedChatUser), (snap) => {
+                    const data = snap.data();
+                    setPeerTyping(!!data?.isTyping);
+                }, () => {});
+                return () => unsub();
+            }, [user, selectedChatUser]);
+
+            useEffect(() => {
+                if (!user || !selectedChatUser) return;
+                const { collection, query, onSnapshot, orderBy, doc, setDoc, updateDoc } = window.FB_Fns;
+                const db = window.db;
+                const chatId = [user.username, selectedChatUser].sort().join('_');
+                const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
+
+                const unsub = onSnapshot(q, (snapshot) => {
+                    const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setMessages(msgs);
+                    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+
+                    msgs.forEach(m => {
+                        if (m.sender !== user.username && !m.seen) {
+                            updateDoc(doc(db, "chats", chatId, "messages", m.id), { seen: true }).catch(() => {});
+                        }
+                    });
+                });
+
+                setDoc(doc(db, "users", user.username, "contacts", selectedChatUser),
+                    { username: selectedChatUser, unreadCount: 0 }, { merge: true }).catch(() => {});
+
+                return () => unsub();
+            }, [user, selectedChatUser]);
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setAuthError('');
+                const uname = usernameInput.trim().toLowerCase();
+                const pass = passwordInput;
+
+                if (!USERNAME_RE.test(uname)) {
+                    setAuthError('Username: 3–20 символов, только a-z, 0-9 и "_"');
+                    return;
+                }
+                if (pass.length < 6) {
+                    setAuthError('Пароль должен быть не короче 6 символов');
+                    return;
+                }
+
+                setAuthBusy(true);
+                try {
+                    const { doc, getDoc, setDoc } = window.FB_Fns;
+                    const db = window.db;
+                    const userRef = doc(db, "users", uname);
+                    const userSnap = await getDoc(userRef);
+
+                    if (isRegistering) {
+                        if (userSnap.exists()) {
+                            setAuthError('Этот username уже занят!');
+                            return;
+                        }
+                        const salt = generateSalt();
+                        const passwordHash = await hashPassword(pass, salt);
+                        await setDoc(userRef, { username: uname, salt, passwordHash, online: true });
+                    } else {
+                        if (!userSnap.exists()) {
+                            setAuthError('Пользователь не найден!');
+                            return;
+                        }
+                        const data = userSnap.data();
+                        const computedHash = await hashPassword(pass, data.salt);
+                        if (computedHash !== data.passwordHash) {
+                            setAuthError('Неверный пароль!');
+                            return;
+                        }
+                    }
+                    const loggedUser = { username: uname };
+                    setUser(loggedUser);
+                    localStorage.setItem('airgram_active_user', JSON.stringify(loggedUser));
+                } catch (err) {
+                    setAuthError('Ошибка соединения с базой данных. Попробуйте снова.');
+                } finally {
+                    setAuthBusy(false);
+                }
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('airgram_active_user');
+                setUser(null);
+                setSelectedChatUser(null);
+                setMessages([]);
+                setContacts([]);
+            };
+
+            const handleSearch = async (e) => {
+                e.preventDefault();
+                setSearchError('');
+                setSearchResult(null);
+                const queryName = searchQuery.trim().toLowerCase();
+                if (!queryName) return;
+                if (queryName === user.username) {
+                    setSearchError('Нельзя искать самого себя');
+                    return;
+                }
+                try {
+                    const { doc, getDoc } = window.FB_Fns;
+                    const userSnap = await getDoc(doc(window.db, "users", queryName));
+                    if (userSnap.exists()) {
+                        setSearchResult(queryName);
+                    } else {
+                        setSearchError('Пользователь не найден в системе');
+                    }
+                } catch (err) {
+                    setSearchError('Ошибка поиска. Проверьте соединение.');
+                }
+            };
+
+            const openChat = (username) => {
+                setSelectedChatUser(username);
+                setMobileView('chat');
+                setSearchResult(null);
+                setSearchQuery('');
+            };
+
+            const handleInputChange = (val) => {
+                setInputText(val);
+                if (!user || !selectedChatUser) return;
+                const { doc, setDoc, serverTimestamp } = window.FB_Fns;
+                const chatId = [user.username, selectedChatUser].sort().join('_');
+                const typingRef = doc(window.db, "chats", chatId, "typing", user.username);
+                setDoc(typingRef, { isTyping: true, updatedAt: serverTimestamp() }).catch(() => {});
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = setTimeout(() => {
+                    setDoc(typingRef, { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
+                }, 1500);
+            };
+
+            const sendMessage = async (e) => {
+                e.preventDefault();
+                const trimmed = inputText.trim();
+                if (!trimmed || !selectedChatUser || isSending) return;
+
+                const plainPreview = trimmed.slice(0, 60);
+                const textToSend = isEncryptedMode ? encryptMirror3(trimmed) : trimmed;
+                setInputText('');
+                setIsSending(true);
+
+                try {
+                    const { collection, addDoc, serverTimestamp, doc, setDoc, increment } = window.FB_Fns;
+                    const db = window.db;
+                    const chatId = [user.username, selectedChatUser].sort().join('_');
+                    const now = new Date();
+
+                    await addDoc(collection(db, "chats", chatId, "messages"), {
+                        text: textToSend,
+                        isEncrypted: isEncryptedMode,
+                        sender: user.username,
+                        timestamp: serverTimestamp(),
+                        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        dateKey: dateKeyOf(now),
+                        seen: false
+                    });
+
+                    const preview = isEncryptedMode ? '🔒 Зашифрованное сообщение' : plainPreview;
+
+                    await setDoc(doc(db, "users", user.username, "contacts", selectedChatUser), {
+                        username: selectedChatUser, lastMessage: preview, lastMessageAt: serverTimestamp(), lastSender: user.username
+                    }, { merge: true });
+
+                    await setDoc(doc(db, "users", selectedChatUser, "contacts", user.username), {
+                        username: user.username, lastMessage: preview, lastMessageAt: serverTimestamp(),
+                        lastSender: user.username, unreadCount: increment(1)
+                    }, { merge: true });
+
+                    clearTimeout(typingTimeoutRef.current);
+                    setDoc(doc(db, "chats", chatId, "typing", user.username), { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
+                } catch (err) {
+                    setInputText(trimmed);
+                } finally {
+                    setIsSending(false);
+                }
+            };
+
+            if (status === 'missing-config') {
+                return (
+                    <div className="flex items-center justify-center h-screen bg-dark-bg p-6 text-center">
+                        <div className="max-w-md">
+                            <p className="text-2xl mb-2">⚙️</p>
+                            <h1 className="text-lg font-semibold text-white mb-2">Firebase не настроен</h1>
+                            <p className="text-sm text-slate-400">Проверьте правильность конфигурации в коде страницы.</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (status === 'loading') {
+                return (
+                    <div className="flex items-center justify-center h-screen bg-dark-bg text-slate-400">
+                        <div className="text-center">
+                            <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                            <p className="text-sm">Подключение к базе данных…</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!user) {
+                return (
+                    <div className="flex items-center justify-center h-screen bg-dark-bg p-4 animate-fade-in">
+                        <div className="bg-dark-panel p-8 rounded-2xl shadow-2xl max-w-sm w-full border border-dark-line">
+                            <div className="text-center mb-6">
+                                <h1 className="text-3xl font-bold text-brand">AirGram</h1>
+                                <p className="text-slate-400 text-sm mt-1">Защищённый мессенджер «Зеркало-3»</p>
+                            </div>
+
+                            <ErrorBanner message={authError} onDismiss={() => setAuthError('')} />
+
+                            <form onSubmit={handleAuth} className="space-y-4">
+                                <input
+                                    type="text"
+                                    placeholder="Username (a-z, 0-9, _)"
+                                    value={usernameInput}
+                                    onChange={(e) => setUsernameInput(e.target.value)}
+                                    autoComplete="username"
+                                    className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand"
+                                />
+                                <input
+                                    type="password"
+                                    placeholder="Пароль (мин. 6 символов)"
+                                    value={passwordInput}
+                                    onChange={(e) => setPasswordInput(e.target.value)}
+                                    autoComplete={isRegistering ? "new-password" : "current-password"}
+                                    className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={authBusy}
+                                    className="w-full bg-brand hover:bg-brand-hover disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-all shadow-lg"
+                                >
+                                    {authBusy ? 'Подождите…' : (isRegistering ? 'Создать аккаунт' : 'Войти')}
+                                </button>
+                            </form>
+
+                            <div className="text-center mt-4">
+                                <button onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }} className="text-sm text-slate-400 hover:text-brand transition-colors">
+                                    {isRegistering ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
+                                </button>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 text-center mt-6">
+                                Пароли хранятся как SHA-256 хеш с индивидуальной солью — никогда в открытом виде.
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+
+            const grouped = [];
+            let lastDateKey = null;
+            messages.forEach((m) => {
+                const key = m.dateKey || 'unknown';
+                if (key !== lastDateKey) {
+                    grouped.push({ type: 'separator', key: `sep-${key}-${m.id}`, label: formatDayLabel(key) });
+                    lastDateKey = key;
+                }
+                grouped.push({ type: 'message', key: m.id, msg: m });
+            });
+
+            return (
+                <div className="flex h-screen bg-dark-bg md:p-6 items-center justify-center animate-fade-in">
+                    <div className="w-full h-full max-w-5xl bg-dark-panel md:rounded-3xl shadow-2xl overflow-hidden flex border border-dark-line">
+
+                        <div className={`w-full md:w-80 bg-slate-950/40 border-r border-dark-line flex flex-col ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
+                            <div className="p-4 border-b border-dark-line flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Avatar name={user.username} size={10} online={true} />
+                                    <div>
+                                        <p className="font-semibold text-white">@{user.username}</p>
+                                        <p className="text-xs text-emerald-400">Онлайн 🔒</p>
+                                    </div>
+                                </div>
+                                <button onClick={handleLogout} className="text-slate-400 hover:text-red-400 text-xs">Выйти</button>
+                            </div>
+
+                            <div className="p-4 border-b border-dark-line">
+                                <form onSubmit={handleSearch} className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Найти username…"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full bg-slate-900 border border-dark-line rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
+                                    />
+                                    <button type="submit" className="bg-brand hover:bg-brand-hover text-white px-3 py-2 rounded-xl text-sm font-semibold">🔍</button>
+                                </form>
+                                <ErrorBanner message={searchError} onDismiss={() => setSearchError('')} />
+                                {searchResult && (
+                                    <div
+                                        onClick={() => openChat(searchResult)}
+                                        className="mt-3 flex items-center gap-3 p-3 rounded-xl cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all animate-pop"
+                                    >
+                                        <Avatar name={searchResult} size={8} />
+                                        <div>
+                                            <p className="font-medium text-sm">@{searchResult}</p>
+                                            <p className="text-[10px] opacity-75">Нажмите, чтобы открыть чат</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto">
+                                <p className="text-xs text-slate-500 uppercase tracking-wider px-4 pt-3 pb-1">Диалоги</p>
+                                {contacts.length === 0 ? (
+                                    <p className="text-xs text-slate-500 italic px-4 py-2">Пока нет диалогов. Найдите собеседника через поиск.</p>
+                                ) : (
+                                    contacts.map((c) => (
+                                        <div
+                                            key={c.id}
+                                            onClick={() => openChat(c.username)}
+                                            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-l-2 ${selectedChatUser === c.username ? 'bg-brand/15 border-brand' : 'border-transparent hover:bg-slate-800/60'}`}
+                                        >
+                                            <Avatar name={c.username} size={9} />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="font-medium text-sm text-white truncate">@{c.username}</p>
+                                                    {c.unreadCount > 0 && (
+                                                        <span className="bg-brand text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shrink-0">
+                                                            {c.unreadCount > 9 ? '9+' : c.unreadCount}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-400 truncate">{c.lastMessage || '—'}</p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className={`flex-1 flex flex-col bg-[#0B1120] ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
+                            {selectedChatUser ? (
+                                <>
+                                    <div className="h-16 bg-slate-900/70 border-b border-dark-line flex items-center justify-between px-4 md:px-6">
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={() => setMobileView('list')} className="md:hidden text-slate-400 hover:text-white text-lg mr-1">←</button>
+                                            <Avatar name={selectedChatUser} size={9} online={chatUserProfile?.online} />
+                                            <div>
+                                                <h2 className="font-semibold text-white">@{selectedChatUser}</h2>
+                                                <p className="text-xs text-slate-400">
+                                                    {chatUserProfile?.online ? <span className="text-emerald-400">В сети</span> : `Был(а) ${timeAgo(chatUserProfile?.lastSeenAt?.toMillis?.())}`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setIsEncryptedMode(!isEncryptedMode)}
+                                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${isEncryptedMode ? 'bg-cipher-dim text-white' : 'bg-slate-700 text-slate-300'}`}
+                                        >
+                                            {isEncryptedMode ? '🔒 Зеркало-3 ВКЛ' : '🔓 Шифр ОТКЛ'}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                        {grouped.map((item) => item.type === 'separator' ? (
+                                            <div key={item.key} className="flex items-center justify-center my-2">
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-500 bg-slate-800/60 px-3 py-1 rounded-full">{item.label}</span>
+                                            </div>
+                                        ) : (
+                                            <MessageBubble key={item.key} msg={item.msg} isMine={item.msg.sender === user.username} />
+                                        ))}
+                                        {peerTyping && <TypingIndicator name={selectedChatUser} />}
+                                        <div ref={messagesEndRef} />
+                                    </div>
+
+                                    <div className="p-4 bg-dark-panel border-t border-dark-line">
+                                        <form onSubmit={sendMessage} className="flex gap-2 items-end">
+                                            <div className="flex-1">
+                                                <input
+                                                    type="text"
+                                                    value={inputText}
+                                                    onChange={(e) => handleInputChange(e.target.value.slice(0, MAX_MESSAGE_LEN))}
+                                                    placeholder={isEncryptedMode ? "Сообщение зашифруется по Зеркало-3…" : "Обычное сообщение…"}
+                                                    className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand text-sm"
+                                                />
+                                                {inputText.length > MAX_MESSAGE_LEN - 100 && (
+                                                    <p className="text-[10px] text-slate-500 mt-1 text-right">{inputText.length}/{MAX_MESSAGE_LEN}</p>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={!inputText.trim() || isSending}
+                                                className="bg-brand hover:bg-brand-hover disabled:opacity-50 text-white px-5 py-3 rounded-xl font-semibold transition-all whitespace-nowrap"
+                                            >
+                                                {isSending ? '…' : 'Отправить'}
+                                            </button>
+                                        </form>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex-1 flex items-center justify-center text-slate-500 text-sm p-4 text-center">
+                                    Выберите диалог слева или найдите собеседника через поиск, чтобы начать переписку.
+                                </div>
+                            )}
+                        </div>
+
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
