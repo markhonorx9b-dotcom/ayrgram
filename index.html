@@ -53,17 +53,22 @@
 
         const isConfigured = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
         if (isConfigured) {
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            const auth = getAuth(app);
-            window.db = db;
-            window.auth = auth;
-            window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult };
-            window.FB_Fns = {
-                collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
-                onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
-            };
-            window.dispatchEvent(new Event('firebase-ready'));
+            try {
+                const app = initializeApp(firebaseConfig);
+                const db = getFirestore(app);
+                const auth = getAuth(app);
+                window.db = db;
+                window.auth = auth;
+                window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult };
+                window.FB_Fns = {
+                    collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
+                    onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
+                };
+                window.dispatchEvent(new Event('firebase-ready'));
+            } catch (err) {
+                console.error("Firebase init error:", err);
+                window.dispatchEvent(new Event('firebase-config-missing'));
+            }
         } else {
             window.dispatchEvent(new Event('firebase-config-missing'));
         }
@@ -270,7 +275,8 @@
         );
 
         const App = () => {
-            const [status, setStatus] = useState('loading');
+            // Мгновенно проверяем, инициализирован ли Firebase, чтобы избежать бесконечного экрана загрузки
+            const [status, setStatus] = useState(() => (window.db && window.auth ? 'ready' : 'loading'));
             const [authInitialized, setAuthInitialized] = useState(false);
             const [user, setUser] = useState(null);
 
@@ -306,7 +312,16 @@
                 window.addEventListener('firebase-ready', onReady);
                 window.addEventListener('firebase-config-missing', onMissing);
 
+                // Защитный таймер (Fallback): если через 3 секунды Firebase не ответил, выходим из загрузки
+                const timer = setTimeout(() => {
+                    if (status === 'loading') {
+                        if (window.db) setStatus('ready');
+                        else setStatus('missing-config');
+                    }
+                }, 3000);
+
                 return () => {
+                    clearTimeout(timer);
                     window.removeEventListener('firebase-ready', onReady);
                     window.removeEventListener('firebase-config-missing', onMissing);
                 };
