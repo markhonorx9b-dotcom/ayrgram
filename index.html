@@ -429,7 +429,8 @@
                         await signInWithRedirect(window.auth, provider);
                     }
                 } catch (err) {
-                    setAuthError('Ошибка авторизации Google: ' + err.message);
+                    setAuthError('Ошибка Google: ' + err.code + " | " + err.message);
+console.error(err);
                     setAuthBusy(false);
                 }
             };
