@@ -295,26 +295,17 @@
             const typingTimeoutRef = useRef(null);
 
             useEffect(() => {
+                if (window.db && window.auth) {
+                    setStatus('ready');
+                    return;
+                }
 
-    if (window.db && window.auth) {
-        setStatus('ready');
-        return;
-    }
+                const onReady = () => setStatus('ready');
+                const onMissing = () => setStatus('missing-config');
 
-    const onReady = () => setStatus('ready');
-    const onMissing = () => setStatus('missing-config');
-
-    window.addEventListener('firebase-ready', onReady);
-    window.addEventListener('firebase-config-missing', onMissing);
-
-    return () => {
-        window.removeEventListener('firebase-ready', onReady);
-        window.removeEventListener('firebase-config-missing', onMissing);
-    };
-
-}, []);
+                window.addEventListener('firebase-ready', onReady);
                 window.addEventListener('firebase-config-missing', onMissing);
-                if (window.db) onReady();
+
                 return () => {
                     window.removeEventListener('firebase-ready', onReady);
                     window.removeEventListener('firebase-config-missing', onMissing);
@@ -326,7 +317,6 @@
                 if (status !== 'ready') return;
                 const { onAuthStateChanged, getRedirectResult } = window.FB_Auth;
                 
-                // Проверяем результат, если был редирект (полезно для мобилок / Telegram WebView)
                 getRedirectResult(window.auth).catch((err) => {
                     console.error("Ошибка редиректа:", err);
                 });
@@ -436,16 +426,14 @@
                 try {
                     const { signInWithPopup, GoogleAuthProvider, signInWithRedirect } = window.FB_Auth;
                     const provider = new GoogleAuthProvider();
-                    // Пробуем сначала Popup, если среда мобильная или блокируется — используем Redirect
                     try {
                         await signInWithPopup(window.auth, provider);
                     } catch (popupErr) {
-                        // Если всплывающие окна заблокированы (особенно на iOS/Telegram), делаем редирект
                         await signInWithRedirect(window.auth, provider);
                     }
                 } catch (err) {
                     setAuthError('Ошибка Google: ' + err.code + " | " + err.message);
-console.error(err);
+                    console.error(err);
                     setAuthBusy(false);
                 }
             };
@@ -716,7 +704,7 @@ console.error(err);
                                                 <span className="text-[10px] uppercase tracking-wider text-slate-500 bg-slate-800/60 px-3 py-1 rounded-full">{item.label}</span>
                                             </div>
                                         ) : (
-                                            <MessageBadge key={item.key} msg={item.msg} isMine={item.msg.sender === user.username} />
+                                            <MessageBubble key={item.key} msg={item.msg} isMine={item.msg.sender === user.username} />
                                         ))}
                                         {peerTyping && <TypingIndicator name={selectedChatUser} />}
                                         <div ref={messagesEndRef} />
