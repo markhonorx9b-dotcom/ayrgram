@@ -41,7 +41,8 @@
             onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Конфигурация Firebase
+        window.firebaseLoaded = true;
+
         const firebaseConfig = {
             apiKey: "AIzaSyCavGRCy4hsLr7_8Onj-TM21xaAd_Vkh2c",
             authDomain: "airgram-66933.firebaseapp.com",
@@ -51,25 +52,21 @@
             appId: "1:876946365615:web:34e5d21fc36d4aa6cf085a",
         };
 
-        const isConfigured = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
-        if (isConfigured) {
-            try {
-                const app = initializeApp(firebaseConfig);
-                const db = getFirestore(app);
-                const auth = getAuth(app);
-                window.db = db;
-                window.auth = auth;
-                window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult };
-                window.FB_Fns = {
-                    collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
-                    onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
-                };
-                window.dispatchEvent(new Event('firebase-ready'));
-            } catch (err) {
-                console.error("Firebase init error:", err);
-                window.dispatchEvent(new Event('firebase-config-missing'));
-            }
-        } else {
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            const auth = getAuth(app);
+            window.db = db;
+            window.auth = auth;
+            window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult };
+            window.FB_Fns = {
+                collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
+                onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
+            };
+            window.dispatchEvent(new Event('firebase-ready'));
+        } catch (err) {
+            console.error("Firebase init error:", err);
+            window.firebaseInitError = err.message;
             window.dispatchEvent(new Event('firebase-config-missing'));
         }
     </script>
@@ -104,7 +101,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
         const QWERTY_LEFT = {
             'q': 'p', 'w': 'q', 'e': 'w', 'r': 'e', 't': 'r', 'y': 't', 'u': 'y', 'i': 'u', 'o': 'i', 'p': 'o',
@@ -188,7 +185,6 @@
         };
 
         const MAX_MESSAGE_LEN = 1000;
-
         const dateKeyOf = (d) => d.toISOString().slice(0, 10);
         const formatDayLabel = (dateKey) => {
             const today = dateKeyOf(new Date());
@@ -276,6 +272,7 @@
 
         const App = () => {
             const [status, setStatus] = useState(() => (window.db && window.auth ? 'ready' : 'loading'));
+            const [loadErrorMsg, setLoadErrorMsg] = useState('');
             const [authInitialized, setAuthInitialized] = useState(false);
             const [user, setUser] = useState(null);
 
@@ -306,43 +303,46 @@
                 }
 
                 const onReady = () => setStatus('ready');
-                const onMissing = () => setStatus('missing-config');
+                const onMissing = () => {
+                    setStatus('missing-config');
+                    setLoadErrorMsg(window.firebaseInitError || 'Не удалось инициализировать Firebase модуль.');
+                };
 
                 window.addEventListener('firebase-ready', onReady);
                 window.addEventListener('firebase-config-missing', onMissing);
 
+                // Принудительный таймаут: если модуль не ответил за 2 секунды, проверяем принудительно
                 const timer = setTimeout(() => {
                     if (status === 'loading') {
-                        if (window.db) setStatus('ready');
-                        else setStatus('missing-config');
+                        if (window.db && window.auth) {
+                            setStatus('ready');
+                        } else {
+                            setStatus('missing-config');
+                            setLoadErrorMsg('Превышено время ожидания загрузки модулей Firebase (проверьте интернет-соединение или блокировщики рекламы).');
+                        }
                     }
-                }, 3000);
+                }, 2000);
 
                 return () => {
                     clearTimeout(timer);
                     window.removeEventListener('firebase-ready', onReady);
                     window.removeEventListener('firebase-config-missing', onMissing);
                 };
-            }, []);
+            }, [status]);
 
-            // Обработка авторизации и редиректа Google
             useEffect(() => {
                 if (status !== 'ready') return;
                 const { onAuthStateChanged, getRedirectResult } = window.FB_Auth;
 
-                // Проверяем результат возврата после редиректа
                 getRedirectResult(window.auth).catch((err) => {
-                    console.error("Ошибка редиректа аутентификации:", err);
-                    setAuthError("Не удалось завершить вход через редирект: " + err.message);
+                    console.error("Ошибка редиректа:", err);
                 });
 
                 const unsub = onAuthStateChanged(window.auth, (firebaseUser) => {
                     if (firebaseUser) {
                         const email = firebaseUser.email.toLowerCase();
                         const displayName = firebaseUser.displayName || email.split('@')[0];
-                        const loggedUser = { username: email, displayName, photoURL: firebaseUser.photoURL };
-                        
-                        setUser(loggedUser);
+                        setUser({ username: email, displayName, photoURL: firebaseUser.photoURL });
 
                         const { doc, setDoc } = window.FB_Fns;
                         setDoc(doc(window.db, "users", email), {
@@ -350,10 +350,7 @@
                             displayName: displayName,
                             photoURL: firebaseUser.photoURL,
                             online: true
-                        }, { merge: true }).catch((err) => {
-                            console.error("Ошибка записи пользователя в БД:", err);
-                        });
-
+                        }, { merge: true }).catch(() => {});
                     } else {
                         setUser(null);
                     }
@@ -362,12 +359,10 @@
                 return () => unsub();
             }, [status]);
 
-            // Обновление онлайна
             useEffect(() => {
                 if (!user || !authInitialized) return;
                 const { doc, setDoc, serverTimestamp } = window.FB_Fns;
-                const db = window.db;
-                const myRef = doc(db, "users", user.username);
+                const myRef = doc(window.db, "users", user.username);
                 const setOnline = (online) => setDoc(myRef, { online, lastSeenAt: serverTimestamp() }, { merge: true }).catch(() => {});
                 setOnline(true);
                 const onVisibility = () => setOnline(document.visibilityState === 'visible');
@@ -382,8 +377,7 @@
             useEffect(() => {
                 if (!user) return;
                 const { collection, query, orderBy, onSnapshot } = window.FB_Fns;
-                const db = window.db;
-                const q = query(collection(db, "users", user.username, "contacts"), orderBy("lastMessageAt", "desc"));
+                const q = query(collection(window.db, "users", user.username, "contacts"), orderBy("lastMessageAt", "desc"));
                 const unsub = onSnapshot(q, (snap) => {
                     setContacts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
                 }, () => {});
@@ -404,8 +398,7 @@
                 const { doc, onSnapshot } = window.FB_Fns;
                 const chatId = [user.username, selectedChatUser].sort().join('_');
                 const unsub = onSnapshot(doc(window.db, "chats", chatId, "typing", selectedChatUser), (snap) => {
-                    const data = snap.data();
-                    setPeerTyping(!!data?.isTyping);
+                    setPeerTyping(!!snap.data()?.isTyping);
                 }, () => {});
                 return () => unsub();
             }, [user, selectedChatUser]);
@@ -413,9 +406,8 @@
             useEffect(() => {
                 if (!user || !selectedChatUser) return;
                 const { collection, query, onSnapshot, orderBy, doc, setDoc, updateDoc } = window.FB_Fns;
-                const db = window.db;
                 const chatId = [user.username, selectedChatUser].sort().join('_');
-                const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
+                const q = query(collection(window.db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
 
                 const unsub = onSnapshot(q, (snapshot) => {
                     const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -424,12 +416,12 @@
 
                     msgs.forEach(m => {
                         if (m.sender !== user.username && !m.seen) {
-                            updateDoc(doc(db, "chats", chatId, "messages", m.id), { seen: true }).catch(() => {});
+                            updateDoc(doc(window.db, "chats", chatId, "messages", m.id), { seen: true }).catch(() => {});
                         }
                     });
                 });
 
-                setDoc(doc(db, "users", user.username, "contacts", selectedChatUser),
+                setDoc(doc(window.db, "users", user.username, "contacts", selectedChatUser),
                     { username: selectedChatUser, unreadCount: 0 }, { merge: true }).catch(() => {});
 
                 return () => unsub();
@@ -441,24 +433,19 @@
                 try {
                     const { signInWithPopup, GoogleAuthProvider, signInWithRedirect } = window.FB_Auth;
                     const provider = new GoogleAuthProvider();
-                    
-                    // Пытаемся сначала открыть popup, если браузер блокирует или ошибка — делаем redirect
                     try {
                         await signInWithPopup(window.auth, provider);
                     } catch (popupErr) {
-                        console.warn("Popup заблокирован или недоступен, пробуем через редирект:", popupErr);
                         await signInWithRedirect(window.auth, provider);
                     }
                 } catch (err) {
-                    setAuthError('Ошибка авторизации: ' + (err.message || err.code));
-                    console.error(err);
+                    setAuthError('Ошибка входа: ' + (err.message || err.code));
                     setAuthBusy(false);
                 }
             };
 
             const handleLogout = () => {
-                const { signOut } = window.FB_Auth;
-                signOut(window.auth).then(() => {
+                window.FB_Auth.signOut(window.auth).then(() => {
                     setSelectedChatUser(null);
                     setMessages([]);
                     setContacts([]);
@@ -476,15 +463,14 @@
                     return;
                 }
                 try {
-                    const { doc, getDoc } = window.FB_Fns;
-                    const userSnap = await getDoc(doc(window.db, "users", queryName));
+                    const userSnap = await window.FB_Fns.getDoc(window.FB_Fns.doc(window.db, "users", queryName));
                     if (userSnap.exists()) {
                         setSearchResult(queryName);
                     } else {
                         setSearchError('Пользователь не найден в системе');
                     }
                 } catch (err) {
-                    setSearchError('Ошибка поиска. Проверьте соединение.');
+                    setSearchError('Ошибка поиска.');
                 }
             };
 
@@ -520,11 +506,10 @@
 
                 try {
                     const { collection, addDoc, serverTimestamp, doc, setDoc, increment } = window.FB_Fns;
-                    const db = window.db;
                     const chatId = [user.username, selectedChatUser].sort().join('_');
                     const now = new Date();
 
-                    await addDoc(collection(db, "chats", chatId, "messages"), {
+                    await addDoc(collection(window.db, "chats", chatId, "messages"), {
                         text: textToSend,
                         isEncrypted: isEncryptedMode,
                         sender: user.username,
@@ -536,17 +521,17 @@
 
                     const preview = isEncryptedMode ? '🔒 Зашифрованное сообщение' : plainPreview;
 
-                    await setDoc(doc(db, "users", user.username, "contacts", selectedChatUser), {
+                    await setDoc(doc(window.db, "users", user.username, "contacts", selectedChatUser), {
                         username: selectedChatUser, lastMessage: preview, lastMessageAt: serverTimestamp(), lastSender: user.username
                     }, { merge: true });
 
-                    await setDoc(doc(db, "users", selectedChatUser, "contacts", user.username), {
+                    await setDoc(doc(window.db, "users", selectedChatUser, "contacts", user.username), {
                         username: user.username, lastMessage: preview, lastMessageAt: serverTimestamp(),
                         lastSender: user.username, unreadCount: increment(1)
                     }, { merge: true });
 
                     clearTimeout(typingTimeoutRef.current);
-                    setDoc(doc(db, "chats", chatId, "typing", user.username), { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
+                    setDoc(doc(window.db, "chats", chatId, "typing", user.username), { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
                 } catch (err) {
                     setInputText(trimmed);
                 } finally {
@@ -557,10 +542,11 @@
             if (status === 'missing-config') {
                 return (
                     <div className="flex items-center justify-center h-screen bg-dark-bg p-6 text-center">
-                        <div className="max-w-md">
-                            <p className="text-2xl mb-2">⚙️</p>
-                            <h1 className="text-lg font-semibold text-white mb-2">Firebase не настроен</h1>
-                            <p className="text-sm text-slate-400">Проверьте правильность конфигурации в коде страницы.</p>
+                        <div className="max-w-md bg-dark-panel p-6 rounded-2xl border border-dark-line">
+                            <p className="text-2xl mb-2">⚠️</p>
+                            <h1 className="text-lg font-semibold text-white mb-2">Ошибка подключения</h1>
+                            <p className="text-sm text-slate-400 mb-4">{loadErrorMsg}</p>
+                            <button onClick={() => window.location.reload()} className="bg-brand text-white px-4 py-2 rounded-xl text-sm font-semibold">Перезагрузить страницу</button>
                         </div>
                     </div>
                 );
@@ -571,7 +557,7 @@
                     <div className="flex items-center justify-center h-screen bg-dark-bg text-slate-400">
                         <div className="text-center">
                             <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                            <p className="text-sm">Подключение…</p>
+                            <p className="text-sm">Инициализация AirGram…</p>
                         </div>
                     </div>
                 );
@@ -603,10 +589,6 @@
                                     {authBusy ? 'Загрузка…' : 'Войти через Google'}
                                 </button>
                             </div>
-
-                            <p className="text-[11px] text-slate-500 text-center mt-6">
-                                Авторизация проходит через защищенные серверы Google.
-                            </p>
                         </div>
                     </div>
                 );
@@ -738,9 +720,6 @@
                                                     placeholder={isEncryptedMode ? "Сообщение зашифруется по Зеркало-3…" : "Обычное сообщение…"}
                                                     className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand text-sm"
                                                 />
-                                                {inputText.length > MAX_MESSAGE_LEN - 100 && (
-                                                    <p className="text-[10px] text-slate-500 mt-1 text-right">{inputText.length}/{MAX_MESSAGE_LEN}</p>
-                                                )}
                                             </div>
                                             <button
                                                 type="submit"
@@ -754,7 +733,7 @@
                                 </>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center text-slate-500 text-sm p-4 text-center">
-                                    Выберите диалог слева или найдите собеседника через поиск по email, чтобы начать переписку.
+                                    Выберите диалог слева или найдите собеседника через поиск по email.
                                 </div>
                             )}
                         </div>
