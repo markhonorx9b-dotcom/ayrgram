@@ -35,7 +35,7 @@
     <!-- Firebase SDK (Modular) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import {
             getFirestore, collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
             onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
@@ -58,7 +58,7 @@
             const auth = getAuth(app);
             window.db = db;
             window.auth = auth;
-            window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged };
+            window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult };
             window.FB_Fns = {
                 collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
                 onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
@@ -306,21 +306,24 @@
                 };
             }, []);
 
-            // Firebase Auth Listener
+            // Firebase Auth Listener + редирект результирующий чек
             useEffect(() => {
                 if (status !== 'ready') return;
-                const { onAuthStateChanged } = window.FB_Auth;
+                const { onAuthStateChanged, getRedirectResult } = window.FB_Auth;
                 
+                // Проверяем результат, если был редирект (полезно для мобилок / Telegram WebView)
+                getRedirectResult(window.auth).catch((err) => {
+                    console.error("Ошибка редиректа:", err);
+                });
+
                 const unsub = onAuthStateChanged(window.auth, (firebaseUser) => {
                     if (firebaseUser) {
                         const email = firebaseUser.email.toLowerCase();
                         const displayName = firebaseUser.displayName || email.split('@')[0];
                         const loggedUser = { username: email, displayName, photoURL: firebaseUser.photoURL };
                         
-                        // Мгновенно переключаем экран и авторизуем пользователя
                         setUser(loggedUser);
 
-                        // Обновляем статус в базе данных в фоновом режиме (без await)
                         const { doc, setDoc } = window.FB_Fns;
                         setDoc(doc(window.db, "users", email), {
                             username: email,
@@ -416,9 +419,15 @@
                 setAuthError('');
                 setAuthBusy(true);
                 try {
-                    const { signInWithPopup, GoogleAuthProvider } = window.FB_Auth;
+                    const { signInWithPopup, GoogleAuthProvider, signInWithRedirect } = window.FB_Auth;
                     const provider = new GoogleAuthProvider();
-                    await signInWithPopup(window.auth, provider);
+                    // Пробуем сначала Popup, если среда мобильная или блокируется — используем Redirect
+                    try {
+                        await signInWithPopup(window.auth, provider);
+                    } catch (popupErr) {
+                        // Если всплывающие окна заблокированы (особенно на iOS/Telegram), делаем редирект
+                        await signInWithRedirect(window.auth, provider);
+                    }
                 } catch (err) {
                     setAuthError('Ошибка авторизации Google: ' + err.message);
                     setAuthBusy(false);
@@ -691,7 +700,7 @@
                                                 <span className="text-[10px] uppercase tracking-wider text-slate-500 bg-slate-800/60 px-3 py-1 rounded-full">{item.label}</span>
                                             </div>
                                         ) : (
-                                            <MessageBubble key={item.key} msg={item.msg} isMine={item.msg.sender === user.username} />
+                                            <MessageBadge key={item.key} msg={item.msg} isMine={item.msg.sender === user.username} />
                                         ))}
                                         {peerTyping && <TypingIndicator name={selectedChatUser} />}
                                         <div ref={messagesEndRef} />
