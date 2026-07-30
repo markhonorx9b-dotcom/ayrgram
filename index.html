@@ -35,12 +35,13 @@
     <!-- Firebase SDK (Modular) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import {
             getFirestore, collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
             onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Конфигурация Firebase интегрирована
+        // Конфигурация Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCavGRCy4hsLr7_8Onj-TM21xaAd_Vkh2c",
             authDomain: "airgram-66933.firebaseapp.com",
@@ -48,14 +49,16 @@
             storageBucket: "airgram-66933.firebasestorage.app",
             messagingSenderId: "876946365615",
             appId: "1:876946365615:web:34e5d21fc36d4aa6cf085a",
-            
         };
 
         const isConfigured = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
         if (isConfigured) {
             const app = initializeApp(firebaseConfig);
             const db = getFirestore(app);
+            const auth = getAuth(app);
             window.db = db;
+            window.auth = auth;
+            window.FB_Auth = { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged };
             window.FB_Fns = {
                 collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
                 onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
@@ -169,17 +172,6 @@
             }).join(' ');
         };
 
-        const bufferToHex = (buffer) =>
-            Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-        const generateSalt = () => bufferToHex(crypto.getRandomValues(new Uint8Array(16)));
-
-        const hashPassword = async (password, salt) => {
-            const data = new TextEncoder().encode(salt + ':' + password);
-            const digest = await crypto.subtle.digest('SHA-256', data);
-            return bufferToHex(digest);
-        };
-
         const AVATAR_PALETTE = [
             'bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-emerald-500',
             'bg-teal-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-fuchsia-500'
@@ -190,7 +182,6 @@
             return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
         };
 
-        const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
         const MAX_MESSAGE_LEN = 1000;
 
         const dateKeyOf = (d) => d.toISOString().slice(0, 10);
@@ -212,11 +203,15 @@
             return `${Math.floor(diff / 86400000)} дн назад`;
         };
 
-        const Avatar = ({ name, size = 10, online }) => (
+        const Avatar = ({ name, size = 10, online, photoURL }) => (
             <div className={`relative shrink-0 w-${size} h-${size}`}>
-                <div className={`w-full h-full rounded-full flex items-center justify-center font-bold text-white ${avatarColor(name)}`}>
-                    {String(name || '?').charAt(0).toUpperCase()}
-                </div>
+                {photoURL ? (
+                    <img src={photoURL} alt={name} className="w-full h-full rounded-full object-cover border border-dark-line" referrerPolicy="no-referrer" />
+                ) : (
+                    <div className={`w-full h-full rounded-full flex items-center justify-center font-bold text-white ${avatarColor(name)}`}>
+                        {String(name || '?').charAt(0).toUpperCase()}
+                    </div>
+                )}
                 {online !== undefined && (
                     <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-dark-panel ${online ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                 )}
@@ -276,6 +271,7 @@
 
         const App = () => {
             const [status, setStatus] = useState('loading');
+            const [authInitialized, setAuthInitialized] = useState(false);
             const [user, setUser] = useState(null);
 
             const [contacts, setContacts] = useState([]);
@@ -292,9 +288,6 @@
             const [peerTyping, setPeerTyping] = useState(false);
             const [mobileView, setMobileView] = useState('list');
 
-            const [isRegistering, setIsRegistering] = useState(false);
-            const [usernameInput, setUsernameInput] = useState('');
-            const [passwordInput, setPasswordInput] = useState('');
             const [authError, setAuthError] = useState('');
             const [authBusy, setAuthBusy] = useState(false);
 
@@ -302,13 +295,7 @@
             const typingTimeoutRef = useRef(null);
 
             useEffect(() => {
-                const onReady = () => {
-                    setStatus('ready');
-                    const saved = localStorage.getItem('airgram_active_user');
-                    if (saved) {
-                        try { setUser(JSON.parse(saved)); } catch (_) {}
-                    }
-                };
+                const onReady = () => setStatus('ready');
                 const onMissing = () => setStatus('missing-config');
                 window.addEventListener('firebase-ready', onReady);
                 window.addEventListener('firebase-config-missing', onMissing);
@@ -319,8 +306,36 @@
                 };
             }, []);
 
+            // Firebase Auth Listener
             useEffect(() => {
-                if (!user || status !== 'ready') return;
+                if (status !== 'ready') return;
+                const { onAuthStateChanged } = window.FB_Auth;
+                const unsub = onAuthStateChanged(window.auth, async (firebaseUser) => {
+                    if (firebaseUser) {
+                        const email = firebaseUser.email.toLowerCase();
+                        const displayName = firebaseUser.displayName || email.split('@')[0];
+                        const loggedUser = { username: email, displayName, photoURL: firebaseUser.photoURL };
+                        
+                        const { doc, setDoc } = window.FB_Fns;
+                        await setDoc(doc(window.db, "users", email), {
+                            username: email,
+                            displayName: displayName,
+                            photoURL: firebaseUser.photoURL,
+                            online: true
+                        }, { merge: true }).catch(() => {});
+
+                        setUser(loggedUser);
+                    } else {
+                        setUser(null);
+                    }
+                    setAuthInitialized(true);
+                });
+                return () => unsub();
+            }, [status]);
+
+            // Обновление онлайна
+            useEffect(() => {
+                if (!user || !authInitialized) return;
                 const { doc, setDoc, serverTimestamp } = window.FB_Fns;
                 const db = window.db;
                 const myRef = doc(db, "users", user.username);
@@ -333,7 +348,7 @@
                     document.removeEventListener('visibilitychange', onVisibility);
                     setOnline(false);
                 };
-            }, [user, status]);
+            }, [user, authInitialized]);
 
             useEffect(() => {
                 if (!user) return;
@@ -391,64 +406,27 @@
                 return () => unsub();
             }, [user, selectedChatUser]);
 
-            const handleAuth = async (e) => {
-                e.preventDefault();
+            const handleGoogleLogin = async () => {
                 setAuthError('');
-                const uname = usernameInput.trim().toLowerCase();
-                const pass = passwordInput;
-
-                if (!USERNAME_RE.test(uname)) {
-                    setAuthError('Username: 3–20 символов, только a-z, 0-9 и "_"');
-                    return;
-                }
-                if (pass.length < 6) {
-                    setAuthError('Пароль должен быть не короче 6 символов');
-                    return;
-                }
-
                 setAuthBusy(true);
                 try {
-                    const { doc, getDoc, setDoc } = window.FB_Fns;
-                    const db = window.db;
-                    const userRef = doc(db, "users", uname);
-                    const userSnap = await getDoc(userRef);
-
-                    if (isRegistering) {
-                        if (userSnap.exists()) {
-                            setAuthError('Этот username уже занят!');
-                            return;
-                        }
-                        const salt = generateSalt();
-                        const passwordHash = await hashPassword(pass, salt);
-                        await setDoc(userRef, { username: uname, salt, passwordHash, online: true });
-                    } else {
-                        if (!userSnap.exists()) {
-                            setAuthError('Пользователь не найден!');
-                            return;
-                        }
-                        const data = userSnap.data();
-                        const computedHash = await hashPassword(pass, data.salt);
-                        if (computedHash !== data.passwordHash) {
-                            setAuthError('Неверный пароль!');
-                            return;
-                        }
-                    }
-                    const loggedUser = { username: uname };
-                    setUser(loggedUser);
-                    localStorage.setItem('airgram_active_user', JSON.stringify(loggedUser));
+                    const { signInWithPopup, GoogleAuthProvider } = window.FB_Auth;
+                    const provider = new GoogleAuthProvider();
+                    await signInWithPopup(window.auth, provider);
                 } catch (err) {
-                    setAuthError('Ошибка соединения с базой данных. Попробуйте снова.');
+                    setAuthError('Ошибка авторизации Google: ' + err.message);
                 } finally {
                     setAuthBusy(false);
                 }
             };
 
             const handleLogout = () => {
-                localStorage.removeItem('airgram_active_user');
-                setUser(null);
-                setSelectedChatUser(null);
-                setMessages([]);
-                setContacts([]);
+                const { signOut } = window.FB_Auth;
+                signOut(window.auth).then(() => {
+                    setSelectedChatUser(null);
+                    setMessages([]);
+                    setContacts([]);
+                });
             };
 
             const handleSearch = async (e) => {
@@ -552,12 +530,12 @@
                 );
             }
 
-            if (status === 'loading') {
+            if (status === 'loading' || (status === 'ready' && !authInitialized)) {
                 return (
                     <div className="flex items-center justify-center h-screen bg-dark-bg text-slate-400">
                         <div className="text-center">
                             <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                            <p className="text-sm">Подключение к базе данных…</p>
+                            <p className="text-sm">Подключение…</p>
                         </div>
                     </div>
                 );
@@ -574,40 +552,24 @@
 
                             <ErrorBanner message={authError} onDismiss={() => setAuthError('')} />
 
-                            <form onSubmit={handleAuth} className="space-y-4">
-                                <input
-                                    type="text"
-                                    placeholder="Username (a-z, 0-9, _)"
-                                    value={usernameInput}
-                                    onChange={(e) => setUsernameInput(e.target.value)}
-                                    autoComplete="username"
-                                    className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand"
-                                />
-                                <input
-                                    type="password"
-                                    placeholder="Пароль (мин. 6 символов)"
-                                    value={passwordInput}
-                                    onChange={(e) => setPasswordInput(e.target.value)}
-                                    autoComplete={isRegistering ? "new-password" : "current-password"}
-                                    className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand"
-                                />
+                            <div className="space-y-4">
                                 <button
-                                    type="submit"
+                                    onClick={handleGoogleLogin}
                                     disabled={authBusy}
-                                    className="w-full bg-brand hover:bg-brand-hover disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-all shadow-lg"
+                                    className="w-full bg-white hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-semibold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-3"
                                 >
-                                    {authBusy ? 'Подождите…' : (isRegistering ? 'Создать аккаунт' : 'Войти')}
-                                </button>
-                            </form>
-
-                            <div className="text-center mt-4">
-                                <button onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }} className="text-sm text-slate-400 hover:text-brand transition-colors">
-                                    {isRegistering ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
+                                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                                        <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                                    </svg>
+                                    {authBusy ? 'Загрузка…' : 'Войти через Google'}
                                 </button>
                             </div>
 
                             <p className="text-[11px] text-slate-500 text-center mt-6">
-                                Пароли хранятся как SHA-256 хеш с индивидуальной солью — никогда в открытом виде.
+                                Авторизация проходит через защищенные серверы Google.
                             </p>
                         </div>
                     </div>
@@ -632,9 +594,9 @@
                         <div className={`w-full md:w-80 bg-slate-950/40 border-r border-dark-line flex flex-col ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
                             <div className="p-4 border-b border-dark-line flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <Avatar name={user.username} size={10} online={true} />
-                                    <div>
-                                        <p className="font-semibold text-white">@{user.username}</p>
+                                    <Avatar name={user.username} size={10} online={true} photoURL={user.photoURL} />
+                                    <div className="overflow-hidden max-w-[120px]">
+                                        <p className="font-semibold text-white truncate">{user.displayName}</p>
                                         <p className="text-xs text-emerald-400">Онлайн 🔒</p>
                                     </div>
                                 </div>
@@ -645,7 +607,7 @@
                                 <form onSubmit={handleSearch} className="flex gap-2">
                                     <input
                                         type="text"
-                                        placeholder="Найти username…"
+                                        placeholder="Найти по email…"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full bg-slate-900 border border-dark-line rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
@@ -659,8 +621,8 @@
                                         className="mt-3 flex items-center gap-3 p-3 rounded-xl cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all animate-pop"
                                     >
                                         <Avatar name={searchResult} size={8} />
-                                        <div>
-                                            <p className="font-medium text-sm">@{searchResult}</p>
+                                        <div className="overflow-hidden">
+                                            <p className="font-medium text-sm truncate">{searchResult}</p>
                                             <p className="text-[10px] opacity-75">Нажмите, чтобы открыть чат</p>
                                         </div>
                                     </div>
@@ -670,7 +632,7 @@
                             <div className="flex-1 overflow-y-auto">
                                 <p className="text-xs text-slate-500 uppercase tracking-wider px-4 pt-3 pb-1">Диалоги</p>
                                 {contacts.length === 0 ? (
-                                    <p className="text-xs text-slate-500 italic px-4 py-2">Пока нет диалогов. Найдите собеседника через поиск.</p>
+                                    <p className="text-xs text-slate-500 italic px-4 py-2">Пока нет диалогов. Найдите собеседника по email через поиск.</p>
                                 ) : (
                                     contacts.map((c) => (
                                         <div
@@ -681,7 +643,7 @@
                                             <Avatar name={c.username} size={9} />
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between">
-                                                    <p className="font-medium text-sm text-white truncate">@{c.username}</p>
+                                                    <p className="font-medium text-sm text-white truncate">{c.username}</p>
                                                     {c.unreadCount > 0 && (
                                                         <span className="bg-brand text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shrink-0">
                                                             {c.unreadCount > 9 ? '9+' : c.unreadCount}
@@ -702,9 +664,9 @@
                                     <div className="h-16 bg-slate-900/70 border-b border-dark-line flex items-center justify-between px-4 md:px-6">
                                         <div className="flex items-center gap-3">
                                             <button onClick={() => setMobileView('list')} className="md:hidden text-slate-400 hover:text-white text-lg mr-1">←</button>
-                                            <Avatar name={selectedChatUser} size={9} online={chatUserProfile?.online} />
-                                            <div>
-                                                <h2 className="font-semibold text-white">@{selectedChatUser}</h2>
+                                            <Avatar name={selectedChatUser} size={9} online={chatUserProfile?.online} photoURL={chatUserProfile?.photoURL} />
+                                            <div className="overflow-hidden">
+                                                <h2 className="font-semibold text-white truncate">{chatUserProfile?.displayName || selectedChatUser}</h2>
                                                 <p className="text-xs text-slate-400">
                                                     {chatUserProfile?.online ? <span className="text-emerald-400">В сети</span> : `Был(а) ${timeAgo(chatUserProfile?.lastSeenAt?.toMillis?.())}`}
                                                 </p>
@@ -756,7 +718,7 @@
                                 </>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center text-slate-500 text-sm p-4 text-center">
-                                    Выберите диалог слева или найдите собеседника через поиск, чтобы начать переписку.
+                                    Выберите диалог слева или найдите собеседника через поиск по email, чтобы начать переписку.
                                 </div>
                             )}
                         </div>
