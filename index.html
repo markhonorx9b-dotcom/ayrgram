@@ -63,11 +63,8 @@
                 collection, addDoc, query, where, getDocs, setDoc, doc, getDoc,
                 onSnapshot, orderBy, serverTimestamp, updateDoc, increment, limit
             };
-            
-            window.__firebaseReady = true;
             window.dispatchEvent(new Event('firebase-ready'));
         } else {
-            window.__firebaseReady = false;
             window.dispatchEvent(new Event('firebase-config-missing'));
         }
     </script>
@@ -276,7 +273,6 @@
             const [status, setStatus] = useState('loading');
             const [authInitialized, setAuthInitialized] = useState(false);
             const [user, setUser] = useState(null);
-            const [firebaseReady, setFirebaseReady] = useState(false);
 
             const [contacts, setContacts] = useState([]);
             const [searchQuery, setSearchQuery] = useState('');
@@ -298,82 +294,42 @@
             const messagesEndRef = useRef(null);
             const typingTimeoutRef = useRef(null);
 
-            // Инициализация Firebase
             useEffect(() => {
-                if (window.__firebaseReady && window.db && window.auth) {
-                    setFirebaseReady(true);
-                    setStatus('ready');
-                    return;
-                }
-
-                const onReady = () => {
-                    setFirebaseReady(true);
-                    setStatus('ready');
-                };
-                const onMissing = () => {
-                    setFirebaseReady(false);
-                    setStatus('missing-config');
-                };
-
+                const onReady = () => setStatus('ready');
+                const onMissing = () => setStatus('missing-config');
                 window.addEventListener('firebase-ready', onReady);
                 window.addEventListener('firebase-config-missing', onMissing);
-
-                if (window.__firebaseReady && window.db && window.auth) {
-                    setFirebaseReady(true);
-                    setStatus('ready');
-                }
-
+                if (window.db) onReady();
                 return () => {
                     window.removeEventListener('firebase-ready', onReady);
                     window.removeEventListener('firebase-config-missing', onMissing);
                 };
             }, []);
 
-            // Firebase Auth Listener
+            // Firebase Auth Listener + редирект результирующий чек
             useEffect(() => {
-                if (status !== 'ready' || !window.auth) return;
-
+                if (status !== 'ready') return;
                 const { onAuthStateChanged, getRedirectResult } = window.FB_Auth;
                 
-                const checkRedirect = async () => {
-                    try {
-                        const result = await getRedirectResult(window.auth);
-                        if (result) {
-                            console.log('Redirect login successful');
-                        }
-                    } catch (err) {
-                        console.error('Ошибка при обработке редиректа:', err);
-                        if (err.code !== 'auth/cancelled-popup-request') {
-                            setAuthError('Ошибка входа: ' + err.message);
-                        }
-                    }
-                };
-
-                checkRedirect();
+                // Проверяем результат, если был редирект (полезно для мобилок / Telegram WebView)
+                getRedirectResult(window.auth).catch((err) => {
+                    console.error("Ошибка редиректа:", err);
+                });
 
                 const unsub = onAuthStateChanged(window.auth, (firebaseUser) => {
-                    setAuthInitialized(true);
-                    
                     if (firebaseUser) {
                         const email = firebaseUser.email.toLowerCase();
                         const displayName = firebaseUser.displayName || email.split('@')[0];
-                        const loggedUser = { 
-                            username: email, 
-                            displayName, 
-                            photoURL: firebaseUser.photoURL,
-                            uid: firebaseUser.uid
-                        };
+                        const loggedUser = { username: email, displayName, photoURL: firebaseUser.photoURL };
                         
                         setUser(loggedUser);
-                        setAuthBusy(false);
 
                         const { doc, setDoc } = window.FB_Fns;
                         setDoc(doc(window.db, "users", email), {
                             username: email,
                             displayName: displayName,
                             photoURL: firebaseUser.photoURL,
-                            online: true,
-                            uid: firebaseUser.uid
+                            online: true
                         }, { merge: true }).catch((err) => {
                             console.error("Ошибка записи пользователя в БД:", err);
                         });
@@ -381,96 +337,65 @@
                     } else {
                         setUser(null);
                     }
+                    setAuthInitialized(true);
                 });
-
-                return () => {
-                    if (unsub) unsub();
-                };
+                return () => unsub();
             }, [status]);
 
             // Обновление онлайна
             useEffect(() => {
-                if (!user || !authInitialized || !window.db) return;
-                
+                if (!user || !authInitialized) return;
                 const { doc, setDoc, serverTimestamp } = window.FB_Fns;
-                const myRef = doc(window.db, "users", user.username);
-                
-                const setOnline = (online) => {
-                    setDoc(myRef, { online, lastSeenAt: serverTimestamp() }, { merge: true }).catch(() => {});
-                };
-                
+                const db = window.db;
+                const myRef = doc(db, "users", user.username);
+                const setOnline = (online) => setDoc(myRef, { online, lastSeenAt: serverTimestamp() }, { merge: true }).catch(() => {});
                 setOnline(true);
-                
-                const onVisibility = () => {
-                    if (document.visibilityState === 'visible') {
-                        setOnline(true);
-                    } else {
-                        setOnline(false);
-                    }
-                };
-                
+                const onVisibility = () => setOnline(document.visibilityState === 'visible');
                 document.addEventListener('visibilitychange', onVisibility);
                 window.addEventListener('beforeunload', () => setOnline(false));
-                
                 return () => {
                     document.removeEventListener('visibilitychange', onVisibility);
-                    window.removeEventListener('beforeunload', () => setOnline(false));
                     setOnline(false);
                 };
             }, [user, authInitialized]);
 
             useEffect(() => {
-                if (!user || !window.db) return;
-                
+                if (!user) return;
                 const { collection, query, orderBy, onSnapshot } = window.FB_Fns;
-                const q = query(collection(window.db, "users", user.username, "contacts"), orderBy("lastMessageAt", "desc"));
-                
+                const db = window.db;
+                const q = query(collection(db, "users", user.username, "contacts"), orderBy("lastMessageAt", "desc"));
                 const unsub = onSnapshot(q, (snap) => {
                     setContacts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                }, (err) => {
-                    console.error('Error loading contacts:', err);
-                });
-                
+                }, () => {});
                 return () => unsub();
             }, [user]);
 
             useEffect(() => {
-                if (!selectedChatUser || !window.db) { 
-                    setChatUserProfile(null); 
-                    return; 
-                }
-                
+                if (!selectedChatUser) { setChatUserProfile(null); return; }
                 const { doc, onSnapshot } = window.FB_Fns;
                 const unsub = onSnapshot(doc(window.db, "users", selectedChatUser), (snap) => {
                     setChatUserProfile(snap.exists() ? snap.data() : null);
-                }, (err) => {
-                    console.error('Error loading user profile:', err);
-                });
-                
+                }, () => {});
                 return () => unsub();
             }, [selectedChatUser]);
 
             useEffect(() => {
-                if (!user || !selectedChatUser || !window.db) return;
-                
+                if (!user || !selectedChatUser) return;
                 const { doc, onSnapshot } = window.FB_Fns;
                 const chatId = [user.username, selectedChatUser].sort().join('_');
                 const unsub = onSnapshot(doc(window.db, "chats", chatId, "typing", selectedChatUser), (snap) => {
                     const data = snap.data();
                     setPeerTyping(!!data?.isTyping);
-                }, (err) => {
-                    console.error('Error loading typing status:', err);
-                });
-                
+                }, () => {});
                 return () => unsub();
             }, [user, selectedChatUser]);
 
             useEffect(() => {
-                if (!user || !selectedChatUser || !window.db) return;
-                
+                if (!user || !selectedChatUser) return;
                 const { collection, query, onSnapshot, orderBy, doc, setDoc, updateDoc } = window.FB_Fns;
+                const db = window.db;
                 const chatId = [user.username, selectedChatUser].sort().join('_');
-                const q = query(collection(window.db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
+                const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
 
                 const unsub = onSnapshot(q, (snapshot) => {
                     const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -479,14 +404,12 @@
 
                     msgs.forEach(m => {
                         if (m.sender !== user.username && !m.seen) {
-                            updateDoc(doc(window.db, "chats", chatId, "messages", m.id), { seen: true }).catch(() => {});
+                            updateDoc(doc(db, "chats", chatId, "messages", m.id), { seen: true }).catch(() => {});
                         }
                     });
-                }, (err) => {
-                    console.error('Error loading messages:', err);
                 });
 
-                setDoc(doc(window.db, "users", user.username, "contacts", selectedChatUser),
+                setDoc(doc(db, "users", user.username, "contacts", selectedChatUser),
                     { username: selectedChatUser, unreadCount: 0 }, { merge: true }).catch(() => {});
 
                 return () => unsub();
@@ -495,30 +418,19 @@
             const handleGoogleLogin = async () => {
                 setAuthError('');
                 setAuthBusy(true);
-                
                 try {
-                    const { signInWithPopup, GoogleAuthProvider } = window.FB_Auth;
+                    const { signInWithPopup, GoogleAuthProvider, signInWithRedirect } = window.FB_Auth;
                     const provider = new GoogleAuthProvider();
-                    provider.setCustomParameters({
-                        prompt: 'select_account'
-                    });
-                    
-                    await signInWithPopup(window.auth, provider);
-                } catch (err) {
-                    console.error('Login error:', err);
-                    
-                    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-                        try {
-                            const { signInWithRedirect } = window.FB_Auth;
-                            await signInWithRedirect(window.auth, new GoogleAuthProvider());
-                        } catch (redirectErr) {
-                            setAuthError('Ошибка входа: ' + redirectErr.message);
-                            setAuthBusy(false);
-                        }
-                    } else {
-                        setAuthError('Ошибка авторизации Google: ' + err.message);
-                        setAuthBusy(false);
+                    // Пробуем сначала Popup, если среда мобильная или блокируется — используем Redirect
+                    try {
+                        await signInWithPopup(window.auth, provider);
+                    } catch (popupErr) {
+                        // Если всплывающие окна заблокированы (особенно на iOS/Telegram), делаем редирект
+                        await signInWithRedirect(window.auth, provider);
                     }
+                } catch (err) {
+                    setAuthError('Ошибка авторизации Google: ' + err.message);
+                    setAuthBusy(false);
                 }
             };
 
@@ -528,9 +440,6 @@
                     setSelectedChatUser(null);
                     setMessages([]);
                     setContacts([]);
-                    setUser(null);
-                }).catch((err) => {
-                    console.error('Logout error:', err);
                 });
             };
 
@@ -538,19 +447,15 @@
                 e.preventDefault();
                 setSearchError('');
                 setSearchResult(null);
-                
                 const queryName = searchQuery.trim().toLowerCase();
                 if (!queryName) return;
-                
                 if (queryName === user.username) {
                     setSearchError('Нельзя искать самого себя');
                     return;
                 }
-                
                 try {
                     const { doc, getDoc } = window.FB_Fns;
                     const userSnap = await getDoc(doc(window.db, "users", queryName));
-                    
                     if (userSnap.exists()) {
                         setSearchResult(queryName);
                     } else {
@@ -570,15 +475,11 @@
 
             const handleInputChange = (val) => {
                 setInputText(val);
-                
-                if (!user || !selectedChatUser || !window.db) return;
-                
+                if (!user || !selectedChatUser) return;
                 const { doc, setDoc, serverTimestamp } = window.FB_Fns;
                 const chatId = [user.username, selectedChatUser].sort().join('_');
                 const typingRef = doc(window.db, "chats", chatId, "typing", user.username);
-                
                 setDoc(typingRef, { isTyping: true, updatedAt: serverTimestamp() }).catch(() => {});
-                
                 clearTimeout(typingTimeoutRef.current);
                 typingTimeoutRef.current = setTimeout(() => {
                     setDoc(typingRef, { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
@@ -587,9 +488,8 @@
 
             const sendMessage = async (e) => {
                 e.preventDefault();
-                
                 const trimmed = inputText.trim();
-                if (!trimmed || !selectedChatUser || isSending || !window.db) return;
+                if (!trimmed || !selectedChatUser || isSending) return;
 
                 const plainPreview = trimmed.slice(0, 60);
                 const textToSend = isEncryptedMode ? encryptMirror3(trimmed) : trimmed;
@@ -598,10 +498,11 @@
 
                 try {
                     const { collection, addDoc, serverTimestamp, doc, setDoc, increment } = window.FB_Fns;
+                    const db = window.db;
                     const chatId = [user.username, selectedChatUser].sort().join('_');
                     const now = new Date();
 
-                    await addDoc(collection(window.db, "chats", chatId, "messages"), {
+                    await addDoc(collection(db, "chats", chatId, "messages"), {
                         text: textToSend,
                         isEncrypted: isEncryptedMode,
                         sender: user.username,
@@ -613,34 +514,24 @@
 
                     const preview = isEncryptedMode ? '🔒 Зашифрованное сообщение' : plainPreview;
 
-                    await setDoc(doc(window.db, "users", user.username, "contacts", selectedChatUser), {
-                        username: selectedChatUser, 
-                        lastMessage: preview, 
-                        lastMessageAt: serverTimestamp(), 
-                        lastSender: user.username
+                    await setDoc(doc(db, "users", user.username, "contacts", selectedChatUser), {
+                        username: selectedChatUser, lastMessage: preview, lastMessageAt: serverTimestamp(), lastSender: user.username
                     }, { merge: true });
 
-                    await setDoc(doc(window.db, "users", selectedChatUser, "contacts", user.username), {
-                        username: user.username, 
-                        lastMessage: preview, 
-                        lastMessageAt: serverTimestamp(),
-                        lastSender: user.username, 
-                        unreadCount: increment(1)
+                    await setDoc(doc(db, "users", selectedChatUser, "contacts", user.username), {
+                        username: user.username, lastMessage: preview, lastMessageAt: serverTimestamp(),
+                        lastSender: user.username, unreadCount: increment(1)
                     }, { merge: true });
 
                     clearTimeout(typingTimeoutRef.current);
-                    const typingRef = doc(window.db, "chats", chatId, "typing", user.username);
-                    setDoc(typingRef, { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
-                    
+                    setDoc(doc(db, "chats", chatId, "typing", user.username), { isTyping: false, updatedAt: serverTimestamp() }).catch(() => {});
                 } catch (err) {
-                    console.error('Send message error:', err);
                     setInputText(trimmed);
                 } finally {
                     setIsSending(false);
                 }
             };
 
-            // Статусы загрузки
             if (status === 'missing-config') {
                 return (
                     <div className="flex items-center justify-center h-screen bg-dark-bg p-6 text-center">
@@ -653,7 +544,7 @@
                 );
             }
 
-            if (status === 'loading' || !firebaseReady) {
+            if (status === 'loading' || (status === 'ready' && !authInitialized)) {
                 return (
                     <div className="flex items-center justify-center h-screen bg-dark-bg text-slate-400">
                         <div className="text-center">
@@ -664,7 +555,7 @@
                 );
             }
 
-            if (!user && authInitialized) {
+            if (!user) {
                 return (
                     <div className="flex items-center justify-center h-screen bg-dark-bg p-4 animate-fade-in">
                         <div className="bg-dark-panel p-8 rounded-2xl shadow-2xl max-w-sm w-full border border-dark-line">
@@ -699,18 +590,6 @@
                 );
             }
 
-            if (!user) {
-                return (
-                    <div className="flex items-center justify-center h-screen bg-dark-bg text-slate-400">
-                        <div className="text-center">
-                            <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                            <p className="text-sm">Загрузка пользователя…</p>
-                        </div>
-                    </div>
-                );
-            }
-
-            // Группировка сообщений
             const grouped = [];
             let lastDateKey = null;
             messages.forEach((m) => {
@@ -719,4 +598,151 @@
                     grouped.push({ type: 'separator', key: `sep-${key}-${m.id}`, label: formatDayLabel(key) });
                     lastDateKey = key;
                 }
-                grouped.push({ type: '
+                grouped.push({ type: 'message', key: m.id, msg: m });
+            });
+
+            return (
+                <div className="flex h-screen bg-dark-bg md:p-6 items-center justify-center animate-fade-in">
+                    <div className="w-full h-full max-w-5xl bg-dark-panel md:rounded-3xl shadow-2xl overflow-hidden flex border border-dark-line">
+
+                        <div className={`w-full md:w-80 bg-slate-950/40 border-r border-dark-line flex flex-col ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
+                            <div className="p-4 border-b border-dark-line flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Avatar name={user.username} size={10} online={true} photoURL={user.photoURL} />
+                                    <div className="overflow-hidden max-w-[120px]">
+                                        <p className="font-semibold text-white truncate">{user.displayName}</p>
+                                        <p className="text-xs text-emerald-400">Онлайн 🔒</p>
+                                    </div>
+                                </div>
+                                <button onClick={handleLogout} className="text-slate-400 hover:text-red-400 text-xs">Выйти</button>
+                            </div>
+
+                            <div className="p-4 border-b border-dark-line">
+                                <form onSubmit={handleSearch} className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Найти по email…"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full bg-slate-900 border border-dark-line rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand"
+                                    />
+                                    <button type="submit" className="bg-brand hover:bg-brand-hover text-white px-3 py-2 rounded-xl text-sm font-semibold">🔍</button>
+                                </form>
+                                <ErrorBanner message={searchError} onDismiss={() => setSearchError('')} />
+                                {searchResult && (
+                                    <div
+                                        onClick={() => openChat(searchResult)}
+                                        className="mt-3 flex items-center gap-3 p-3 rounded-xl cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all animate-pop"
+                                    >
+                                        <Avatar name={searchResult} size={8} />
+                                        <div className="overflow-hidden">
+                                            <p className="font-medium text-sm truncate">{searchResult}</p>
+                                            <p className="text-[10px] opacity-75">Нажмите, чтобы открыть чат</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto">
+                                <p className="text-xs text-slate-500 uppercase tracking-wider px-4 pt-3 pb-1">Диалоги</p>
+                                {contacts.length === 0 ? (
+                                    <p className="text-xs text-slate-500 italic px-4 py-2">Пока нет диалогов. Найдите собеседника по email через поиск.</p>
+                                ) : (
+                                    contacts.map((c) => (
+                                        <div
+                                            key={c.id}
+                                            onClick={() => openChat(c.username)}
+                                            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-l-2 ${selectedChatUser === c.username ? 'bg-brand/15 border-brand' : 'border-transparent hover:bg-slate-800/60'}`}
+                                        >
+                                            <Avatar name={c.username} size={9} />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="font-medium text-sm text-white truncate">{c.username}</p>
+                                                    {c.unreadCount > 0 && (
+                                                        <span className="bg-brand text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shrink-0">
+                                                            {c.unreadCount > 9 ? '9+' : c.unreadCount}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-400 truncate">{c.lastMessage || '—'}</p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className={`flex-1 flex flex-col bg-[#0B1120] ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
+                            {selectedChatUser ? (
+                                <>
+                                    <div className="h-16 bg-slate-900/70 border-b border-dark-line flex items-center justify-between px-4 md:px-6">
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={() => setMobileView('list')} className="md:hidden text-slate-400 hover:text-white text-lg mr-1">←</button>
+                                            <Avatar name={selectedChatUser} size={9} online={chatUserProfile?.online} photoURL={chatUserProfile?.photoURL} />
+                                            <div className="overflow-hidden">
+                                                <h2 className="font-semibold text-white truncate">{chatUserProfile?.displayName || selectedChatUser}</h2>
+                                                <p className="text-xs text-slate-400">
+                                                    {chatUserProfile?.online ? <span className="text-emerald-400">В сети</span> : `Был(а) ${timeAgo(chatUserProfile?.lastSeenAt?.toMillis?.())}`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setIsEncryptedMode(!isEncryptedMode)}
+                                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${isEncryptedMode ? 'bg-cipher-dim text-white' : 'bg-slate-700 text-slate-300'}`}
+                                        >
+                                            {isEncryptedMode ? '🔒 Зеркало-3 ВКЛ' : '🔓 Шифр ОТКЛ'}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                        {grouped.map((item) => item.type === 'separator' ? (
+                                            <div key={item.key} className="flex items-center justify-center my-2">
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-500 bg-slate-800/60 px-3 py-1 rounded-full">{item.label}</span>
+                                            </div>
+                                        ) : (
+                                            <MessageBadge key={item.key} msg={item.msg} isMine={item.msg.sender === user.username} />
+                                        ))}
+                                        {peerTyping && <TypingIndicator name={selectedChatUser} />}
+                                        <div ref={messagesEndRef} />
+                                    </div>
+
+                                    <div className="p-4 bg-dark-panel border-t border-dark-line">
+                                        <form onSubmit={sendMessage} className="flex gap-2 items-end">
+                                            <div className="flex-1">
+                                                <input
+                                                    type="text"
+                                                    value={inputText}
+                                                    onChange={(e) => handleInputChange(e.target.value.slice(0, MAX_MESSAGE_LEN))}
+                                                    placeholder={isEncryptedMode ? "Сообщение зашифруется по Зеркало-3…" : "Обычное сообщение…"}
+                                                    className="w-full bg-slate-900 border border-dark-line rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand text-sm"
+                                                />
+                                                {inputText.length > MAX_MESSAGE_LEN - 100 && (
+                                                    <p className="text-[10px] text-slate-500 mt-1 text-right">{inputText.length}/{MAX_MESSAGE_LEN}</p>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={!inputText.trim() || isSending}
+                                                className="bg-brand hover:bg-brand-hover disabled:opacity-50 text-white px-5 py-3 rounded-xl font-semibold transition-all whitespace-nowrap"
+                                            >
+                                                {isSending ? '…' : 'Отправить'}
+                                            </button>
+                                        </form>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex-1 flex items-center justify-center text-slate-500 text-sm p-4 text-center">
+                                    Выберите диалог слева или найдите собеседника через поиск по email, чтобы начать переписку.
+                                </div>
+                            )}
+                        </div>
+
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
