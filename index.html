@@ -432,8 +432,17 @@
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 hide(el('screen-auth'));
-                Notification.requestPermission();
-                await synchronizeUserAccount(user);
+                try { Notification.requestPermission(); } catch (_) {}
+                try {
+                    await synchronizeUserAccount(user);
+                } catch (err) {
+                    console.error("Auth sync error:", err);
+                    toast("Ошибка синхронизации аккаунта: " + (err.message || err), true);
+                    // Даже при ошибке показываем setup, если пользователь новый
+                    hide(el('screen-app'));
+                    show(el('screen-setup'));
+                    setupUsernameValidationLogic();
+                }
             } else {
                 show(el('screen-auth'));
                 hide(el('screen-app'));
@@ -447,7 +456,9 @@
 
             if (snap.exists()) {
                 me = snap.data();
-                await updateDoc(userRef, { isOnline: true, lastSeen: serverTimestamp() });
+                try {
+                    await updateDoc(userRef, { isOnline: true, lastSeen: serverTimestamp() });
+                } catch (e) { console.warn("Online status update failed", e); }
                 startApplication();
             } else {
                 hide(el('screen-auth'));
@@ -457,8 +468,12 @@
             }
         }
 
-        // Валидация уникальности никнейма в реальном времени
+        // Валидация уникальности никнейма в реальном времени (защита от повторной привязки)
+        let usernameValidationAttached = false;
         function setupUsernameValidationLogic() {
+            if (usernameValidationAttached) return;
+            usernameValidationAttached = true;
+
             const input = el('input-setup-username');
             const status = el('setup-username-status');
             const btn = el('btn-complete-setup');
@@ -472,7 +487,7 @@
 
                 const val = input.value.trim().toLowerCase();
                 if (val.length < 3) {
-                    status.textContent = "Минимум 3 symbols"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                    status.textContent = "Минимум 3 символа"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
                     return;
                 }
                 if (/[^a-z0-9_]/.test(val)) {
@@ -481,14 +496,19 @@
                 }
 
                 timer = setTimeout(async () => {
-                    const q = query(collection(db, "users"), where("username", "==", val));
-                    const res = await getDocs(q);
-                    if (!res.empty) {
-                        status.textContent = "Этот никнейм уже занят"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
-                    } else {
-                        status.textContent = "Никнейм свободен!"; status.className = "text-green-400 text-xs mt-1 font-semibold"; show(status);
-                        btn.disabled = false;
-                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    try {
+                        const q = query(collection(db, "users"), where("username", "==", val));
+                        const res = await getDocs(q);
+                        if (!res.empty) {
+                            status.textContent = "Этот никнейм уже занят"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                        } else {
+                            status.textContent = "Никнейм свободен!"; status.className = "text-green-400 text-xs mt-1 font-semibold"; show(status);
+                            btn.disabled = false;
+                            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        }
+                    } catch (err) {
+                        status.textContent = "Ошибка проверки никнейма"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                        console.error(err);
                     }
                 }, 400);
             });
@@ -496,43 +516,89 @@
 
         el('btn-complete-setup').addEventListener('click', async () => {
             const user = auth.currentUser;
-            const username = el('input-setup-username').value.trim().toLowerCase();
-            
-            const payload = {
-                uid: user.uid,
-                email: user.email,
-                displayName: user.displayName || username,
-                photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${username}&background=5865f2&color=fff`,
-                username: username,
-                bio: "Использую MChat!",
-                createdAt: serverTimestamp(),
-                isOnline: true,
-                lastSeen: serverTimestamp()
-            };
+            if (!user) return;
 
-            await setDoc(doc(db, "users", user.uid), payload);
-            me = payload;
-            hide(el('screen-auth'));
-            hide(el('screen-setup'));
-            startApplication();
+            const username = el('input-setup-username').value.trim().toLowerCase();
+            if (username.length < 3 || /[^a-z0-9_]/.test(username)) {
+                toast("Некорректный никнейм", true);
+                return;
+            }
+
+            const btn = el('btn-complete-setup');
+            btn.disabled = true;
+            btn.textContent = "Создание аккаунта...";
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                // Финальная проверка уникальности
+                const q = query(collection(db, "users"), where("username", "==", username));
+                const res = await getDocs(q);
+                if (!res.empty) {
+                    toast("Этот никнейм уже занят", true);
+                    btn.disabled = false;
+                    btn.textContent = "Начать общение";
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    return;
+                }
+
+                const payload = {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName || username,
+                    photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=5865f2&color=fff`,
+                    username: username,
+                    bio: "Использую MChat!",
+                    createdAt: serverTimestamp(),
+                    isOnline: true,
+                    lastSeen: serverTimestamp()
+                };
+
+                await setDoc(doc(db, "users", user.uid), payload);
+
+                // Перечитываем документ, чтобы получить реальные Timestamp вместо FieldValue
+                const snap = await getDoc(doc(db, "users", user.uid));
+                me = snap.exists() ? snap.data() : { ...payload, createdAt: new Date(), lastSeen: new Date() };
+
+                hide(el('screen-auth'));
+                hide(el('screen-setup'));
+                startApplication();
+            } catch (err) {
+                console.error("Setup error:", err);
+                toast("Ошибка создания аккаунта: " + (err.message || err), true);
+                btn.disabled = false;
+                btn.textContent = "Начать общение";
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
         });
 
         // Запуск интерфейса
         function startApplication() {
-            hide(el('screen-auth'));
-            hide(el('screen-setup'));
-            show(el('screen-app'));
-            el('ui-my-avatar').src = me.photoURL;
-            el('ui-my-name').textContent = me.displayName;
-            el('ui-my-username').textContent = `@${me.username}`;
+            try {
+                hide(el('screen-auth'));
+                hide(el('screen-setup'));
+                show(el('screen-app'));
+                el('ui-my-avatar').src = me.photoURL || '';
+                el('ui-my-name').textContent = me.displayName || me.username || '...';
+                el('ui-my-username').textContent = `@${me.username || '...'}`;
 
-            setupTabRouting();
-            renderSidebarData();
-            setupGlobalEventListeners();
+                setupTabRouting();
+                renderSidebarData();
+                setupGlobalEventListeners();
+            } catch (err) {
+                console.error("startApplication error:", err);
+                toast("Ошибка запуска интерфейса: " + (err.message || err), true);
+                // Всё равно пытаемся показать приложение
+                show(el('screen-app'));
+                hide(el('screen-auth'));
+                hide(el('screen-setup'));
+            }
         }
 
-        // Маршрутизация вкладок левого сайдбара
+        // Маршрутизация вкладок левого сайдбара (защита от дублирования слушателей)
+        let tabRoutingAttached = false;
         function setupTabRouting() {
+            if (tabRoutingAttached) return;
+            tabRoutingAttached = true;
             const tabs = ['chats', 'friends', 'search'];
             tabs.forEach(t => {
                 el(`tab-${t}`).addEventListener('click', () => {
@@ -554,48 +620,67 @@
             if (activeTab === 'chats') {
                 const q = query(collection(db, "chats"), where("participants", "array-contains", me.uid), orderBy("updatedAt", "desc"));
                 activeListeners.sidebar = onSnapshot(q, async (snap) => {
-                    container.innerHTML = '';
-                    if (snap.empty) {
-                        container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8">Нет активных чатов</div>`;
-                        return;
-                    }
-                    for (const chatDoc of snap.docs) {
-                        const chatData = chatDoc.data();
-                        const item = document.createElement('div');
-                        item.className = `flex items-center gap-3 p-2.5 rounded cursor-pointer transition hover:bg-brandBg ${activeChat?.id === chatDoc.id ? 'bg-brandBg' : ''}`;
-                        
-                        let title = chatData.name || "Групповой чат";
-                        let avatar = chatData.photoURL || "https://ui-avatars.com/api/?name=Group&background=4f545c";
-                        let statusMarker = '';
-
-                        if (chatData.type === 'direct') {
-                            const companionId = chatData.participants.find(p => p !== me.uid);
-                            const companionSnap = await getDoc(doc(db, "users", companionId));
-                            if (companionSnap.exists()) {
-                                const comp = companionSnap.data();
-                                title = comp.displayName;
-                                avatar = comp.photoURL;
-                                statusMarker = `<div class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-sidebarBg ${comp.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>`;
-                            }
+                    try {
+                        container.innerHTML = '';
+                        if (snap.empty) {
+                            container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8">Нет активных чатов</div>`;
+                            return;
                         }
+                        for (const chatDoc of snap.docs) {
+                            const chatData = chatDoc.data();
+                            const item = document.createElement('div');
+                            item.className = `flex items-center gap-3 p-2.5 rounded cursor-pointer transition hover:bg-brandBg ${activeChat?.id === chatDoc.id ? 'bg-brandBg' : ''}`;
+                            
+                            let title = chatData.name || "Групповой чат";
+                            let avatar = chatData.photoURL || "https://ui-avatars.com/api/?name=Group&background=4f545c";
+                            let statusMarker = '';
 
-                        item.innerHTML = `
-                            <div class="relative flex-shrink-0">
-                                <img src="${avatar}" class="w-11 h-11 rounded-full object-cover bg-gray-700">
-                                ${statusMarker}
-                            </div>
-                            <div class="flex-1 overflow-hidden">
-                                <div class="flex justify-between items-center mb-0.5">
-                                    <span class="text-sm font-bold text-white truncate">${title}</span>
-                                    <span class="text-[10px] text-textMuted">${chatData.updatedAt ? new Date(chatData.updatedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
+                            if (chatData.type === 'direct') {
+                                const companionId = chatData.participants.find(p => p !== me.uid);
+                                if (companionId) {
+                                    try {
+                                        const companionSnap = await getDoc(doc(db, "users", companionId));
+                                        if (companionSnap.exists()) {
+                                            const comp = companionSnap.data();
+                                            title = comp.displayName || title;
+                                            avatar = comp.photoURL || avatar;
+                                            statusMarker = `<div class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-sidebarBg ${comp.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>`;
+                                        }
+                                    } catch (e) { console.warn("Companion load error", e); }
+                                }
+                            }
+
+                            let timeStr = '';
+                            try {
+                                if (chatData.updatedAt && typeof chatData.updatedAt.toDate === 'function') {
+                                    timeStr = new Date(chatData.updatedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                                }
+                            } catch (_) {}
+
+                            item.innerHTML = `
+                                <div class="relative flex-shrink-0">
+                                    <img src="${avatar}" class="w-11 h-11 rounded-full object-cover bg-gray-700">
+                                    ${statusMarker}
                                 </div>
-                                <p class="text-xs text-textMuted truncate">${chatData.lastMessage || 'Сообщений нет'}</p>
-                            </div>
-                        `;
-                        item.onclick = () => selectActiveChat(chatDoc.id, chatData.type, chatData, title, avatar);
-                        container.appendChild(item);
+                                <div class="flex-1 overflow-hidden">
+                                    <div class="flex justify-between items-center mb-0.5">
+                                        <span class="text-sm font-bold text-white truncate">${title}</span>
+                                        <span class="text-[10px] text-textMuted">${timeStr}</span>
+                                    </div>
+                                    <p class="text-xs text-textMuted truncate">${chatData.lastMessage || 'Сообщений нет'}</p>
+                                </div>
+                            `;
+                            item.onclick = () => selectActiveChat(chatDoc.id, chatData.type, chatData, title, avatar);
+                            container.appendChild(item);
+                        }
+                    } catch (err) {
+                        console.error("Sidebar chats render error:", err);
+                        container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8">Ошибка загрузки чатов</div>`;
                     }
-                }, () => {});
+                }, (err) => {
+                    console.error("Chats snapshot error (возможно нужен индекс Firestore):", err);
+                    container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8 px-2">Ошибка загрузки чатов.<br>Проверьте индексы Firestore (array-contains + orderBy updatedAt).</div>`;
+                });
 
             } else if (activeTab === 'friends') {
                 const qReq = query(collection(db, "friend_requests"), where("toId", "==", me.uid), where("status", "==", "pending"));
@@ -687,6 +772,9 @@
                             el(`msg-friend-${u.uid}`).onclick = () => initOrOpenDirectChat(u);
                         }
                     }
+                }, (err) => {
+                    console.error("Friends snapshot error:", err);
+                    container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8">Ошибка загрузки друзей</div>`;
                 });
 
             } else if (activeTab === 'search') {
@@ -1271,7 +1359,10 @@
             btn.onclick = (e) => e.target.closest('.fixed').classList.add('hidden');
         });
 
+        let globalListenersAttached = false;
         function setupGlobalEventListeners() {
+            if (globalListenersAttached) return;
+            globalListenersAttached = true;
             window.addEventListener('resize', () => hide(el('msg-context-menu')));
         }
     </script>
