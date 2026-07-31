@@ -516,7 +516,10 @@
 
         el('btn-complete-setup').addEventListener('click', async () => {
             const user = auth.currentUser;
-            if (!user) return;
+            if (!user) {
+                toast("Нет авторизованного пользователя", true);
+                return;
+            }
 
             const username = el('input-setup-username').value.trim().toLowerCase();
             if (username.length < 3 || /[^a-z0-9_]/.test(username)) {
@@ -525,25 +528,38 @@
             }
 
             const btn = el('btn-complete-setup');
+            const originalText = "Начать общение";
             btn.disabled = true;
             btn.textContent = "Создание аккаунта...";
             btn.classList.add('opacity-50', 'cursor-not-allowed');
 
+            let success = false;
+
+            // Таймаут на случай, если Firestore зависнет (права, сеть, правила)
+            const withTimeout = (promise, ms = 15000) => {
+                return Promise.race([
+                    promise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Таймаут операции (проверьте правила Firestore и интернет)")), ms))
+                ]);
+            };
+
             try {
-                // Финальная проверка уникальности
-                const q = query(collection(db, "users"), where("username", "==", username));
-                const res = await getDocs(q);
-                if (!res.empty) {
-                    toast("Этот никнейм уже занят", true);
-                    btn.disabled = false;
-                    btn.textContent = "Начать общение";
-                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    return;
+                // Быстрая проверка уникальности (не критично, live-валидация уже прошла)
+                try {
+                    const q = query(collection(db, "users"), where("username", "==", username));
+                    const res = await withTimeout(getDocs(q), 8000);
+                    if (!res.empty) {
+                        toast("Этот никнейм уже занят", true);
+                        return;
+                    }
+                } catch (checkErr) {
+                    console.warn("Проверка никнейма не удалась, продолжаем:", checkErr);
+                    // Не блокируем создание из-за ошибки проверки
                 }
 
                 const payload = {
                     uid: user.uid,
-                    email: user.email,
+                    email: user.email || null,
                     displayName: user.displayName || username,
                     photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=5865f2&color=fff`,
                     username: username,
@@ -553,21 +569,33 @@
                     lastSeen: serverTimestamp()
                 };
 
-                await setDoc(doc(db, "users", user.uid), payload);
+                await withTimeout(setDoc(doc(db, "users", user.uid), payload), 12000);
 
-                // Перечитываем документ, чтобы получить реальные Timestamp вместо FieldValue
-                const snap = await getDoc(doc(db, "users", user.uid));
-                me = snap.exists() ? snap.data() : { ...payload, createdAt: new Date(), lastSeen: new Date() };
+                // Перечитываем документ
+                try {
+                    const snap = await withTimeout(getDoc(doc(db, "users", user.uid)), 8000);
+                    me = snap.exists() ? snap.data() : { ...payload, createdAt: new Date(), lastSeen: new Date() };
+                } catch (readErr) {
+                    console.warn("Не удалось перечитать документ, используем локальные данные:", readErr);
+                    me = { ...payload, createdAt: new Date(), lastSeen: new Date() };
+                }
 
+                success = true;
                 hide(el('screen-auth'));
                 hide(el('screen-setup'));
                 startApplication();
             } catch (err) {
                 console.error("Setup error:", err);
-                toast("Ошибка создания аккаунта: " + (err.message || err), true);
-                btn.disabled = false;
-                btn.textContent = "Начать общение";
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                const msg = err?.code === 'permission-denied' 
+                    ? "Нет прав на запись в Firestore. Проверьте Security Rules!" 
+                    : (err.message || String(err));
+                toast("Ошибка создания аккаунта: " + msg, true);
+            } finally {
+                if (!success) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
             }
         });
 
