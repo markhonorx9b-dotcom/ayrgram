@@ -289,7 +289,7 @@
         <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-md border border-gray-700 shadow-2xl">
             <div class="flex justify-between items-center mb-4">
                 <h3 id="modal-group-title" class="text-xl font-bold text-white">Создание группы</h3>
-                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
             <div class="flex flex-col gap-4">
                 <div class="flex items-center gap-4">
@@ -437,6 +437,7 @@
             } else {
                 show(el('screen-auth'));
                 hide(el('screen-app'));
+                hide(el('screen-setup'));
             }
         });
 
@@ -449,6 +450,8 @@
                 await updateDoc(userRef, { isOnline: true, lastSeen: serverTimestamp() });
                 startApplication();
             } else {
+                hide(el('screen-auth'));
+                hide(el('screen-app'));
                 show(el('screen-setup'));
                 setupUsernameValidationLogic();
             }
@@ -469,7 +472,7 @@
 
                 const val = input.value.trim().toLowerCase();
                 if (val.length < 3) {
-                    status.textContent = "Минимум 3 символа"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                    status.textContent = "Минимум 3 symbols"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
                     return;
                 }
                 if (/[^a-z0-9_]/.test(val)) {
@@ -509,12 +512,15 @@
 
             await setDoc(doc(db, "users", user.uid), payload);
             me = payload;
+            hide(el('screen-auth'));
             hide(el('screen-setup'));
             startApplication();
         });
 
         // Запуск интерфейса
         function startApplication() {
+            hide(el('screen-auth'));
+            hide(el('screen-setup'));
             show(el('screen-app'));
             el('ui-my-avatar').src = me.photoURL;
             el('ui-my-name').textContent = me.displayName;
@@ -592,12 +598,10 @@
                 }, () => {});
 
             } else if (activeTab === 'friends') {
-                // Запрос друзей и входящих заявок
                 const qReq = query(collection(db, "friend_requests"), where("toId", "==", me.uid), where("status", "==", "pending"));
                 activeListeners.sidebar = onSnapshot(qReq, async (snapReq) => {
                     container.innerHTML = '';
                     
-                    // Сначала рендерим заявки
                     if (!snapReq.empty) {
                         const header = document.createElement('div');
                         header.className = "text-[10px] uppercase font-bold text-accentBtn px-2 mb-1 mt-2";
@@ -637,7 +641,6 @@
                         }
                     }
 
-                    // Затем рендерим список друзей
                     const headerF = document.createElement('div');
                     headerF.className = "text-[10px] uppercase font-bold text-textMuted px-2 mb-1 mt-4";
                     headerF.textContent = "Все друзья";
@@ -769,7 +772,6 @@
             el('active-chat-title').textContent = computedTitle;
             el('active-chat-status').textContent = type === 'direct' ? 'Пользователь' : 'Групповой чат';
 
-            // Настройка экшенов шапки
             const actionContainer = el('active-chat-actions');
             actionContainer.innerHTML = '';
             if (type === 'group') {
@@ -777,7 +779,6 @@
                 el('btn-manage-group').onclick = () => openGroupManagementModal();
             }
 
-            // Переподписка на сообщения
             if (activeListeners.messages) activeListeners.messages();
             const qMsg = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
             
@@ -798,7 +799,6 @@
                 initialLoad = false;
             });
 
-            // Отслеживание закрепленного сообщения
             if (activeListeners.pinned) activeListeners.pinned();
             activeListeners.pinned = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
                 const cData = dSnap.data();
@@ -818,7 +818,6 @@
                 }
             });
 
-            // Индикатор печати
             if (activeListeners.typing) activeListeners.typing();
             activeListeners.typing = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
                 const cData = dSnap.data();
@@ -844,7 +843,6 @@
             msgDiv.id = `msg-${msgId}`;
             msgDiv.className = `flex w-full gap-3 ${isMe ? 'justify-end' : 'justify-start'}`;
 
-            // Сборка метаданных ответа
             let replyBlockHTML = '';
             if (msg.replyTo) {
                 replyBlockHTML = `
@@ -854,7 +852,6 @@
                 `;
             }
 
-            // Сборка контента
             let bodyHTML = `<p class="text-sm select-text whitespace-pre-wrap">${msg.text || ''}</p>`;
             if (msg.type === 'image') {
                 bodyHTML = `
@@ -865,7 +862,7 @@
                 `;
             } else if (msg.type === 'file') {
                 bodyHTML = `
-                    <div class="flex items-center gap-3 bg-brandBg p-2 rounded.md border border-gray-800">
+                    <div class="flex items-center gap-3 bg-brandBg p-2 rounded-md border border-gray-800">
                         <i class="fa-solid fa-file-shield text-2xl text-accentBtn"></i>
                         <div class="overflow-hidden max-w-xs">
                             <p class="text-xs font-bold text-white truncate">${msg.fileName}</p>
@@ -892,7 +889,6 @@
                 </div>
             `;
 
-            // Подключение контекстного меню
             msgDiv.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 openMessageContextMenu(e.clientX, e.clientY, msgId, msg);
@@ -910,16 +906,13 @@
 
             contextedMessage = { id: msgId, data: msg };
 
-            // Управление видимостью кнопок
             const isMyMsg = msg.senderId === me.uid;
             if (isMyMsg) { show(el('ctx-edit')); show(el('ctx-delete')); } 
             else { hide(el('ctx-edit')); hide(el('ctx-delete')); }
         }
 
-        // Закрытие контекстного меню при любом клике
         document.addEventListener('click', () => hide(el('msg-context-menu')));
 
-        // Экшены контекстного меню
         el('ctx-reply').onclick = () => {
             replyingToMessage = contextedMessage;
             el('reply-user-name').textContent = replyingToMessage.data.senderName;
@@ -980,7 +973,6 @@
             if (!text && !selectedFile) return;
             if (!activeChat) return;
 
-            // Проверка пасхалки из системного промпта
             if (text === '😿') {
                 playNotificationSound('meow');
             }
@@ -1011,7 +1003,7 @@
                         payload.type = selectedFile.type.startsWith('image/') ? 'image' : 'file';
                         payload.fileUrl = url;
                         payload.fileName = selectedFile.name;
-                        payload.text = text; // Описание к картинке/файлу, если есть
+                        payload.text = text;
                         
                         await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
                         await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text ? text : `📎 ${selectedFile.name}`, updatedAt: serverTimestamp() });
@@ -1036,7 +1028,6 @@
         el('btn-send-message').onclick = handleMessageSendingFlow;
         el('input-message').onkeydown = (e) => { if(e.key === 'Enter') handleMessageSendingFlow(); };
 
-        // Индикатор "Печатает..." (Debounce инпута)
         el('input-message').addEventListener('input', () => {
             if (!activeChat) return;
             updateDoc(doc(db, "chats", activeChat.id), { typing: me.uid });
@@ -1078,7 +1069,6 @@
             };
         });
 
-        // Драг-энд-дроп файлов в окно чата
         const chatWindow = el('chat-window');
         chatWindow.addEventListener('dragover', (e) => { e.preventDefault(); chatWindow.classList.add('opacity-75'); });
         chatWindow.addEventListener('dragleave', () => chatWindow.classList.remove('opacity-75'));
@@ -1099,7 +1089,6 @@
             show(el('modal-profile'));
         };
 
-        // Загрузка нового аватара для профиля
         el('avatar-upload-trigger').onclick = () => el('input-avatar-file').click();
         el('input-avatar-file').onchange = async (e) => {
             const file = e.target.files[0];
@@ -1117,7 +1106,6 @@
             toast("Аватар успешно обновлен");
         };
 
-        // Сохранение изменений текстового профиля с проверкой уникальности никнейма
         el('btn-save-profile').onclick = async () => {
             const name = el('modal-profile-name').value.trim();
             const username = el('modal-profile-username').value.trim().toLowerCase();
@@ -1152,14 +1140,12 @@
             const actionContainer = el('view-user-actions');
             actionContainer.innerHTML = '';
 
-            // Определение связи (Уже друзья или отправлен запрос)
             const qReq1 = query(collection(db, "friend_requests"), where("fromId", "==", me.uid), where("toId", "==", user.uid));
             const qReq2 = query(collection(db, "friend_requests"), where("fromId", "==", user.uid), where("toId", "==", me.uid));
             const [snapReq1, snapReq2] = await Promise.all([getDocs(qReq1), getDocs(qReq2)]);
 
             let hasPendingRequest = !snapReq1.empty || !snapReq2.empty;
 
-            // Проверка дружбы
             const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid), where("user2", "==", user.uid));
             const qF2 = query(collection(db, "friendships"), where("user1", "==", user.uid), where("user2", "==", me.uid));
             const [snapF1, snapF2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
@@ -1189,7 +1175,7 @@
             show(el('modal-user-view'));
         }
 
-        // Управление групповыми чатами (Создание)
+        // Управление групповыми чатами
         el('btn-open-group-modal').onclick = async () => {
             el('modal-group-title').textContent = "Создание группы";
             el('modal-group-name').value = '';
@@ -1197,7 +1183,6 @@
             show(el('btn-submit-group'));
             el('btn-submit-group').textContent = "Создать группу";
 
-            // Сбор списка друзей для добавления в новую группу
             const container = el('modal-group-friends-list');
             container.innerHTML = '';
             
@@ -1246,7 +1231,6 @@
             show(el('modal-group'));
         };
 
-        // Управление участниками группы для админа
         async function openGroupManagementModal() {
             if (activeChat.data.adminId !== me.uid) {
                 toast("У вас нет прав администратора для управления", true);
@@ -1276,20 +1260,18 @@
                         await updateDoc(doc(db, "chats", activeChat.id), { participants: updatedParticipants });
                         activeChat.data.participants = updatedParticipants;
                         toast(`Пользователь ${u.displayName} исключен`);
-                        openGroupManagementModal(); // Обновляем
+                        openGroupManagementModal();
                     };
                 }
             }
             show(el('modal-group'));
         }
 
-        // Общие закрывашки для всех модальных окон
         document.querySelectorAll('.modal-close').forEach(btn => {
             btn.onclick = (e) => e.target.closest('.fixed').classList.add('hidden');
         });
 
         function setupGlobalEventListeners() {
-            // Закрытие контекстного клика по экрану
             window.addEventListener('resize', () => hide(el('msg-context-menu')));
         }
     </script>
