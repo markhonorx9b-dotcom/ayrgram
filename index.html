@@ -1,556 +1,1297 @@
 <!DOCTYPE html>
-<html lang="ru">
-
+<html lang="ru" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AirGram — Зеркало-3</title>
-
-    <script src="https://cdn.tailwindcss.com">
-    </script>
+    <title>MChat Messenger</title>
+    <!-- Tailwind CSS & FontAwesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            darkMode: "class",
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        dark: {
-                            bg: "#0b1120",
-                            panel: "#141b2d",
-                            bubble: "#1e2a45",
-                            line: "#22304a"
-                        },
-                        brand: {
-                            DEFAULT: "#4f7cff",
-                            hover: "#3c63e6"
-                        },
-                        cipher: {
-                            DEFAULT: "#37e2b0",
-                            dim: "#1f6f57"
-                        }
+                        brandBg: '#202225',
+                        sidebarBg: '#2f3136',
+                        chatBg: '#36393f',
+                        accentBtn: '#5865f2',
+                        accentHover: '#4752c4',
+                        textMain: '#dcddde',
+                        textMuted: '#72767d'
                     }
                 }
             }
         }
     </script>
-
-    <!-- React -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js">
-    </script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js">
-    </script>
-
-    <!-- Babel Standalone -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js">
-    </script>
-
-    <!-- Firebase -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import {
-            getAuth,
-            signInAnonymously,
-            signOut,
-            onAuthStateChanged
-        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import {
-            getFirestore,
-            collection,
-            doc,
-            setDoc,
-            getDoc,
-            getDocs,
-            query,
-            where,
-            addDoc,
-            onSnapshot,
-            orderBy,
-            serverTimestamp,
-            updateDoc,
-            increment
-        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCavGRCy4hsLr7_8Onj-TM21xaAd_Vkh2c",
-            authDomain: "airgram-66933.firebaseapp.com",
-            projectId: "airgram-66933",
-            storageBucket: "airgram-66933.firebasestorage.app",
-            messagingSenderId: "876946365615",
-            appId: "1:876946365615:web:34e5d21fc36d4aa6cf085a"
-        };
-
-        try {
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            const auth = getAuth(app);
-
-            // Делаем сервисы доступными глобально
-            window.db = db;
-            window.auth = auth;
-            window.FB_AUTH = {
-                signInAnonymously,
-                signOut,
-                onAuthStateChanged
-            };
-            window.FB = {
-                collection,
-                doc,
-                setDoc,
-                getDoc,
-                getDocs,
-                query,
-                where,
-                addDoc,
-                onSnapshot,
-                orderBy,
-                serverTimestamp,
-                updateDoc,
-                increment
-            };
-
-            window.dispatchEvent(new Event("firebase-ready"));
-        } catch (error) {
-            console.error("Firebase error:", error);
-            window.firebaseError = error.message;
-            window.dispatchEvent(new Event("firebase-error"));
-        }
-    </script>
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body {
-            margin: 0;
-            background: #0b1120;
-            color: white;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #22304a;
-            border-radius: 10px;
-        }
-        @keyframes fade {
-            from {
-                opacity: 0;
-                transform: translateY(5px);
-            }
-            to {
-                opacity: 1;
-                transform: none;
-            }
-        }
-        .fade {
-            animation: fade .25s ease;
-        }
+        body { background-color: #202225; color: #dcddde; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #2f3136; }
+        ::-webkit-scrollbar-thumb { background: #202225; border-radius: 3px; }
+        .active-tab { background-color: #40444b; color: #fff; }
+        .context-menu { position: absolute; z-index: 1000; background: #18191c; border: 1px solid #2f3136; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); width: 180px; }
+        .context-menu button { width: 100%; text-align: left; padding: 8px 12px; font-size: 14px; color: #dcddde; transition: background 0.2s; }
+        .context-menu button:hover { background: #5865f2; color: #fff; }
     </style>
+    
+    <!-- Firebase Modular SDK v11 -->
+    <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js",
+        "firebase/storage": "https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js"
+      }
+    }
+    </script>
 </head>
+<body class="h-screen w-screen flex antialiased select-none">
 
-<body>
-    <div id="root"></div>
+    <!-- Тосты уведомлений -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+    <!-- Элемент контекстного меню -->
+    <div id="msg-context-menu" class="context-menu hidden">
+        <button id="ctx-reply"><i class="fa-solid fa-reply mr-2"></i> Ответить</button>
+        <button id="ctx-edit"><i class="fa-solid fa-pen mr-2"></i> Редактировать</button>
+        <button id="ctx-pin"><i class="fa-solid fa-thumbtack mr-2"></i> Закрепить / Открепить</button>
+        <button id="ctx-copy"><i class="fa-solid fa-copy mr-2"></i> Копировать текст</button>
+        <button id="ctx-delete" class="text-red-400 hover:bg-red-600 hover:text-white"><i class="fa-solid fa-trash mr-2"></i> Удалить</button>
+    </div>
 
-        // --- Константы для шифрования ---
-        const QWERTY_LEFT = {
-            'q': 'p', 'w': 'q', 'e': 'w', 'r': 'e', 't': 'r',
-            'y': 't', 'u': 'y', 'i': 'u', 'o': 'i', 'p': 'o',
-            'a': 'l', 's': 'a', 'd': 's', 'f': 'd', 'g': 'f',
-            'h': 'g', 'j': 'h', 'k': 'j', 'l': 'k',
-            'z': 'm', 'x': 'z', 'c': 'x', 'v': 'c',
-            'b': 'v', 'n': 'b', 'm': 'n'
+    <!-- Экраны: Авторизация -->
+    <div id="screen-auth" class="absolute inset-0 flex items-center justify-center bg-brandBg z-40">
+        <div class="bg-sidebarBg p-8 rounded-lg shadow-2xl text-center w-full max-w-sm border border-gray-700">
+            <h1 class="text-4xl font-extrabold mb-2 text-white tracking-wider flex items-center justify-center gap-2">
+                <i class="fa-solid fa-circle-nodes text-accentBtn animate-pulse"></i> MCHAT
+            </h1>
+            <p class="text-textMuted text-sm mb-8">Next-gen Realtime Messenger</p>
+            <button id="btn-google-login" class="w-full bg-accentBtn hover:bg-accentHover text-white font-bold py-3 px-4 rounded transition duration-200 flex items-center justify-center gap-3">
+                <i class="fa-brands fa-google text-lg"></i> Войти через Google
+            </button>
+        </div>
+    </div>
+
+    <!-- Экраны: Создание юзернейма (Первый вход) -->
+    <div id="screen-setup" class="absolute inset-0 flex items-center justify-center bg-brandBg z-30 hidden">
+        <div class="bg-sidebarBg p-8 rounded-lg shadow-2xl w-full max-w-sm border border-gray-700">
+            <h2 class="text-2xl font-bold mb-2 text-white">Добро пожаловать!</h2>
+            <p class="text-textMuted text-xs mb-6">Выберите уникальное имя пользователя. Оно будет использоваться для поиска вас в системе.</p>
+            <div class="mb-6 relative">
+                <label class="block text-xs font-bold uppercase tracking-wider text-textMain mb-2">Имя пользователя (@)</label>
+                <input type="text" id="input-setup-username" class="w-full bg-brandBg text-white p-3 rounded border border-gray-700 focus:border-accentBtn focus:outline-none transition" placeholder="nickname">
+                <div id="setup-username-status" class="text-xs mt-1 font-semibold hidden"></div>
+            </div>
+            <button id="btn-complete-setup" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded transition opacity-50 cursor-not-allowed" disabled>
+                Начать общение
+            </button>
+        </div>
+    </div>
+
+    <!-- Главный интерфейс приложения -->
+    <div id="screen-app" class="w-full h-full flex hidden">
+        
+        <!-- Левый сайдбар -->
+        <div class="w-80 bg-sidebarBg flex flex-col flex-shrink-0 border-r border-brandBg">
+            <!-- Верхняя панель профиля -->
+            <div class="p-4 bg-brandBg flex justify-between items-center shadow-md">
+                <div class="flex items-center gap-3 cursor-pointer hover:opacity-80 transition" id="ui-my-profile-trigger">
+                    <div class="relative">
+                        <img id="ui-my-avatar" class="w-10 h-10 rounded-full object-cover bg-gray-600">
+                        <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-brandBg rounded-full"></div>
+                    </div>
+                    <div class="overflow-hidden w-40">
+                        <div id="ui-my-name" class="font-bold text-white text-sm truncate">...</div>
+                        <div id="ui-my-username" class="text-xs text-textMuted truncate">...</div>
+                    </div>
+                </div>
+                <div class="flex gap-2 text-textMuted">
+                    <button id="btn-open-group-modal" title="Создать группу" class="hover:text-white transition p-1"><i class="fa-solid fa-circle-plus"></i></button>
+                    <button id="btn-logout" title="Выйти" class="hover:text-red-400 transition p-1"><i class="fa-solid fa-right-from-bracket"></i></button>
+                </div>
+            </div>
+
+            <!-- Вкладки навигации -->
+            <div class="flex border-b border-brandBg bg-brandBg text-xs font-bold uppercase tracking-wider text-textMuted">
+                <button id="tab-chats" class="flex-1 py-3 text-center active-tab transition">Чаты</button>
+                <button id="tab-friends" class="flex-1 py-3 text-center transition">Друзья</button>
+                <button id="tab-search" class="flex-1 py-3 text-center transition">Поиск</button>
+            </div>
+
+            <!-- Контент вкладок -->
+            <div class="flex-1 overflow-y-auto p-2" id="sidebar-content">
+                <!-- Сюда динамически рендерятся списки -->
+                <div id="list-container" class="flex flex-col gap-1"></div>
+            </div>
+        </div>
+
+        <!-- Основная область чата -->
+        <div class="flex-1 bg-chatBg flex flex-col relative" id="chat-window">
+            
+            <!-- Заглушка, когда чат не выбран -->
+            <div id="chat-empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-textMuted z-10 bg-chatBg">
+                <i class="fa-solid fa-comments text-7xl mb-4 text-gray-700"></i>
+                <p class="text-lg font-medium">Выберите собеседника или группу из списка</p>
+                <p class="text-xs text-gray-600 mt-1">MChat v1.0.0 Realtime Protocol</p>
+            </div>
+
+            <!-- Верхняя панель активного чата -->
+            <div class="h-16 bg-chatBg border-b border-brandBg flex justify-between items-center px-6 shadow-sm z-20">
+                <div class="flex items-center gap-3">
+                    <img id="active-chat-avatar" class="w-10 h-10 rounded-full object-cover bg-gray-600">
+                    <div>
+                        <div id="active-chat-title" class="font-bold text-white text-sm">...</div>
+                        <div id="active-chat-status" class="text-xs text-textMuted">...</div>
+                    </div>
+                </div>
+                <!-- Закрепленное сообщение сверху -->
+                <div id="pinned-message-bar" class="hidden flex-1 max-w-md mx-4 bg-brandBg px-3 py-1.5 rounded border-l-2 border-accentBtn flex justify-between items-center text-xs">
+                    <div class="truncate mr-2 text-textMain">
+                        <span class="font-bold text-accentBtn"><i class="fa-solid fa-thumbtack mr-1"></i> Закреплено:</span>
+                        <span id="pinned-text">...</span>
+                    </div>
+                    <button id="btn-jump-pinned" class="text-textMuted hover:text-white font-bold whitespace-nowrap">Просмотреть</button>
+                </div>
+                <div id="active-chat-actions" class="text-textMuted flex gap-3">
+                    <!-- Будет наполняться кнопками управления группой при необходимости -->
+                </div>
+            </div>
+
+            <!-- Область отображения сообщений -->
+            <div id="messages-area" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-chatBg"></div>
+
+            <!-- Индикатор "Печатает..." -->
+            <div id="typing-indicator-bar" class="px-6 py-1 text-xs text-textMuted italic hidden bg-chatBg">
+                <span id="typing-text">Кто-то печатает...</span>
+            </div>
+
+            <!-- Предпросмотр ответа на сообщение -->
+            <div id="reply-preview-bar" class="px-6 py-2 bg-brandBg border-t border-brandBg hidden flex justify-between items-center text-xs text-textMain">
+                <div class="truncate">
+                    <i class="fa-solid fa-reply mr-2 text-accentBtn"></i>Ответ пользователю <span id="reply-user-name" class="font-bold"></span>: 
+                    <span id="reply-msg-text" class="italic text-textMuted ml-1"></span>
+                </div>
+                <button id="btn-cancel-reply" class="text-textMuted hover:text-red-400"><i class="fa-solid fa-xmark text-sm"></i></button>
+            </div>
+
+            <!-- Предпросмотр медиафайла перед отправкой (Drag and Drop / Выбор) -->
+            <div id="file-preview-bar" class="px-6 py-2 bg-brandBg border-t border-brandBg hidden flex justify-between items-center text-xs text-textMain">
+                <div class="flex items-center gap-2 truncate">
+                    <i class="fa-solid fa-file-arrow-up text-green-500 text-lg"></i>
+                    <span id="preview-file-name" class="font-bold truncate">file.dat</span>
+                    <span id="preview-file-size" class="text-textMuted">(0 KB)</span>
+                </div>
+                <button id="btn-cancel-file" class="text-textMuted hover:text-red-400"><i class="fa-solid fa-xmark text-sm"></i></button>
+            </div>
+
+            <!-- Панель ввода сообщений -->
+            <div class="p-4 bg-chatBg border-t border-brandBg flex flex-col gap-2">
+                <div class="bg-brandBg rounded-lg flex items-center p-2.5 relative">
+                    <!-- Скрытые инпуты загрузки -->
+                    <input type="file" id="input-file-select" class="hidden">
+                    
+                    <button id="btn-trigger-upload" class="text-textMuted hover:text-white px-2.5 transition" title="Прикрепить файл"><i class="fa-solid fa-paperclip text-lg"></i></button>
+                    <input type="text" id="input-message" class="flex-1 bg-transparent text-white focus:outline-none px-2 text-sm" placeholder="Написать сообщение...">
+                    
+                    <!-- Кнопка эмодзи -->
+                    <button id="btn-emoji" class="text-textMuted hover:text-white px-2.5 transition" title="Эмодзи"><i class="fa-regular fa-face-smile text-lg"></i></button>
+                    <!-- Панель эмодзи -->
+                    <div id="emoji-picker" class="absolute bottom-14 right-12 bg-sidebarBg border border-brandBg p-2 rounded shadow-xl grid grid-cols-6 gap-1 hidden z-30">
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">😀</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">😂</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🥰</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">👍</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🔥</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🎉</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">👀</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">💯</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🚀</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">💔</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">💩</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">😿</button>
+                    </div>
+
+                    <button id="btn-send-message" class="text-accentBtn hover:text-white px-2.5 transition" title="Отправить"><i class="fa-solid fa-paper-plane text-lg"></i></button>
+                </div>
+                <!-- Прогресс бар отправки файлов -->
+                <div id="upload-progress-container" class="w-full bg-brandBg h-1.5 rounded overflow-hidden hidden">
+                    <div id="upload-progress-bar" class="bg-accentBtn h-full transition-all duration-150" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Профиль текущего пользователя -->
+    <div id="modal-profile" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-white">Редактирование профиля</h3>
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="flex flex-col items-center gap-4 mb-4">
+                <div class="relative group cursor-pointer" id="avatar-upload-trigger">
+                    <img id="modal-profile-avatar" class="w-24 h-24 rounded-full object-cover border-4 border-brandBg bg-gray-700">
+                    <div class="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                        <i class="fa-solid fa-camera text-white text-xl"></i>
+                    </div>
+                    <input type="file" id="input-avatar-file" class="hidden" accept="image/*">
+                </div>
+                <div class="text-center w-full">
+                    <p id="modal-profile-email" class="text-xs text-textMuted"></p>
+                    <p id="modal-profile-joined" class="text-[10px] text-gray-500 mt-0.5"></p>
+                </div>
+            </div>
+            <div class="flex flex-col gap-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Отображаемое имя</label>
+                    <input type="text" id="modal-profile-name" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Уникальный никнейм (@)</label>
+                    <input type="text" id="modal-profile-username" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn">
+                    <div id="modal-username-status" class="text-xs mt-1 font-semibold hidden"></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">О себе</label>
+                    <textarea id="modal-profile-bio" rows="2" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn resize-none"></textarea>
+                </div>
+                <button id="btn-save-profile" class="w-full bg-accentBtn hover:bg-accentHover text-white font-bold py-2.5 rounded transition">Сохранить изменения</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Просмотр чужого профиля -->
+    <div id="modal-user-view" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+            <div class="flex justify-end">
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex flex-col items-center text-center gap-3">
+                <img id="view-user-avatar" class="w-24 h-24 rounded-full object-cover border-4 border-brandBg bg-gray-700">
+                <div>
+                    <h4 id="view-user-name" class="text-xl font-bold text-white">...</h4>
+                    <p id="view-user-username" class="text-xs text-accentBtn">@...</p>
+                    <p id="view-user-status" class="text-[11px] text-textMuted mt-1">...</p>
+                </div>
+                <p id="view-user-bio" class="text-sm text-textMain italic px-4 py-2 bg-brandBg rounded w-full border border-gray-800 min-h-12 flex items-center justify-center">...</p>
+                <div id="view-user-actions" class="w-full flex flex-col gap-2 mt-2">
+                    <!-- Кнопки управления дружбой: Добавить / Удалить / Принять -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Создание / Управление групповым чатом -->
+    <div id="modal-group" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modal-group-title" class="text-xl font-bold text-white">Создание группы</h3>
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex flex-col gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="relative group cursor-pointer" id="group-avatar-upload-trigger">
+                        <img id="modal-group-avatar" src="https://ui-avatars.com/api/?name=Group&background=4f545c&color=fff" class="w-16 h-16 rounded-full object-cover bg-gray-700">
+                        <div class="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                            <i class="fa-solid fa-camera text-white text-xs"></i>
+                        </div>
+                        <input type="file" id="input-group-avatar-file" class="hidden" accept="image/*">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold uppercase text-textMain mb-1">Название группы</label>
+                        <input type="text" id="modal-group-name" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn" placeholder="Например: Разработчики">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Участники (Выберите друзей)</label>
+                    <div id="modal-group-friends-list" class="max-h-40 overflow-y-auto border border-gray-700 rounded bg-brandBg p-2 flex flex-col gap-1">
+                        <!-- Сюда подгрузятся друзья с чекбоксами -->
+                    </div>
+                </div>
+                <div id="modal-group-members-management" class="hidden">
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Управление участниками группы</label>
+                    <div id="modal-group-current-members" class="max-h-40 overflow-y-auto border border-gray-700 rounded bg-brandBg p-2 flex flex-col gap-1">
+                        <!-- Для админа - список участников с кнопкой КИК -->
+                    </div>
+                </div>
+                <button id="btn-submit-group" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded transition">Создать группу</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Просмотр полноразмерного изображения -->
+    <div id="modal-image-view" class="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center hidden" onclick="this.classList.add('hidden')">
+        <img id="full-size-image-element" class="max-w-full max-h-full p-4 rounded-lg object-contain">
+    </div>
+
+    <!-- Модульная логика приложения -->
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit } from "firebase/firestore";
+        import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+
+        // Заданная конфигурация Firebase проекта Airgram
+        const firebaseConfig = {
+          apiKey: "AIzaSyCavGRCy4hsLr7_8Onj-TM21xaAd_Vkh2c",
+          authDomain: "airgram-66933.firebaseapp.com",
+          projectId: "airgram-66933",
+          storageBucket: "airgram-66933.firebasestorage.app",
+          messagingSenderId: "876946365615",
+          appId: "1:876946365615:web:34e5d21fc36d4aa6cf085a",
+          measurementId: "G-MX6EVE8YSC"
         };
 
-        const QWERTY_RIGHT = {
-            'p': 'q', 'q': 'w', 'w': 'e', 'e': 'r',
-            'r': 't', 't': 'y', 'y': 'u', 'u': 'i',
-            'i': 'o', 'o': 'p',
-            'l': 'a', 'a': 's', 's': 'd', 'd': 'f',
-            'f': 'g', 'g': 'h', 'h': 'j',
-            'j': 'k', 'k': 'l',
-            'm': 'z', 'z': 'x', 'x': 'c',
-            'c': 'v', 'v': 'b', 'b': 'n',
-            'n': 'm'
+        // Инициализация сервисов
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+        const provider = new GoogleAuthProvider();
+
+        // Системный стейт
+        let me = null; 
+        let activeTab = 'chats'; 
+        let activeChat = null; // { id, type, data }
+        let selectedFile = null;
+        let replyingToMessage = null;
+        let contextedMessage = null;
+        let typingTimeout = null;
+
+        // Кэш слушателей realtime для предотвращения утечек
+        const activeListeners = {
+            sidebar: null,
+            messages: null,
+            typing: null,
+            pinned: null,
+            chatMeta: null
         };
 
-        const TRANSLIT_MAP = {
-            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g',
-            'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
-            'з': 'z', 'и': 'i', 'й': 'j', 'к': 'k',
-            'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
-            'п': 'p', 'р': 'r', 'с': 's', 'т': 't',
-            'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c',
-            'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
-            'ъ': "'q", 'ы': 'y', 'ь': "'x",
-            'э': 'eh', 'ю': 'yu', 'я': 'ya'
-        };
+        // Вспомогательные хелперы DOM
+        const el = id => document.getElementById(id);
+        const show = element => element.classList.remove('hidden');
+        const hide = element => element.classList.add('hidden');
 
-        const REVERSE_TRANSLIT = {
-            "'q": "ъ",
-            "'x": "ь",
-            "zh": "ж",
-            "ch": "ч",
-            "sh": "ш",
-            "sch": "щ",
-            "eh": "э",
-            "yu": "ю",
-            "ya": "я",
-            "a": "а",
-            "b": "б",
-            "v": "в",
-            "g": "г",
-            "d": "д",
-            "e": "е",
-            "z": "з",
-            "i": "и",
-            "j": "й",
-            "k": "к",
-            "l": "л",
-            "m": "м",
-            "n": "н",
-            "o": "о",
-            "p": "п",
-            "r": "р",
-            "s": "с",
-            "t": "т",
-            "u": "у",
-            "f": "ф",
-            "h": "х",
-            "c": "ц",
-            "y": "ы"
-        };
-
-        // --- Функции шифрования/дешифрования ---
-        function encryptMirror3(text) {
-            return text
-                .split(" ")
-                .map(word => {
-                    let reversed = Array.from(word).reverse().join("");
-                    let translit = "";
-                    for (const c of reversed) {
-                        const x = c.toLowerCase();
-                        translit += TRANSLIT_MAP[x] ?? x;
-                    }
-                    let shifted = "";
-                    for (const c of translit) {
-                        const x = c.toLowerCase();
-                        shifted += QWERTY_LEFT[x] ?? x;
-                    }
-                    return shifted;
-                })
-                .join(" ");
+        // Генерация чистого звука без внешних файлов (Web Audio API)
+        function playNotificationSound(type = 'msg') {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                if (type === 'msg') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Ре5
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.12);
+                } else if (type === 'meow') {
+                    // Специальный пасхальный звук для 😿
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(880, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.15);
+                    osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.3);
+                    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                }
+            } catch (e) { console.warn("Аудио контекст заблокирован браузером"); }
         }
 
-        function decodeChunk(str, i) {
-            if (str.substr(i, 3) === "sch") return { ch: "щ", len: 3 };
-            let two = str.substr(i, 2);
-            if (REVERSE_TRANSLIT[two]) return { ch: REVERSE_TRANSLIT[two], len: 2 };
-            return { ch: REVERSE_TRANSLIT[str[i]] ?? str[i], len: 1 };
-        }
+        // Система тост-уведомлений
+        function toast(text, isError = false) {
+            const container = el('toast-container');
+            const item = document.createElement('div');
+            item.className = `p-3.5 rounded shadow-xl text-sm font-semibold pointer-events-auto text-white flex items-center gap-2 border transition duration-300 ${isError ? 'bg-red-600 border-red-700' : 'bg-accentBtn border-brandBg'}`;
+            item.innerHTML = `<i class="fa-solid ${isError ? 'fa-circle-exclamation' : 'fa-circle-info'}"></i> <span>${text}</span>`;
+            container.appendChild(item);
+            setTimeout(() => { item.style.opacity = '0'; setTimeout(() => item.remove(), 300); }, 3500);
 
-        function decryptMirror3(text) {
-            return text
-                .split(" ")
-                .map(word => {
-                    let normal = "";
-                    for (const c of word) {
-                        normal += QWERTY_RIGHT[c] ?? c;
-                    }
-                    let result = "";
-                    let i = 0;
-                    while (i < normal.length) {
-                        const part = decodeChunk(normal, i);
-                        result += part.ch;
-                        i += part.len;
-                    }
-                    return Array.from(result).reverse().join("");
-                })
-                .join(" ");
-        }
-
-        // --- Вспомогательные компоненты ---
-        const colors = [
-            "bg-red-500", "bg-orange-500", "bg-green-500",
-            "bg-blue-500", "bg-purple-500", "bg-pink-500"
-        ];
-
-        function avatarColor(name) {
-            let h = 0;
-            for (const c of name) {
-                h = (h * 31 + c.charCodeAt(0)) >>> 0;
+            if (!isError && Notification.permission === "granted") {
+                new Notification("MChat", { body: text });
             }
-            return colors[h % colors.length];
         }
 
-        function Avatar({ name, online }) {
-            return ( <
-                div className = "relative w-10 h-10" >
-                <
-                div className = { `w-full h-full rounded-full flex items-center justify-center font-bold ${avatarColor(name)}` } >
-                { name ? .[0] ? .toUpperCase() } <
-                /div> {
-                    online !== undefined && < div className = { `absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-dark-panel ${online ? "bg-green-400" : "bg-gray-500"}` }
-                    />} <
-                    /div>
-                );
+        // Авторизация и отслеживание сессии
+        el('btn-google-login').addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch(err => toast(err.message, true));
+        });
+
+        el('btn-logout').addEventListener('click', async () => {
+            if (auth.currentUser) {
+                await updateDoc(doc(db, "users", auth.currentUser.uid), { isOnline: false, lastSeen: serverTimestamp() });
             }
+            signOut(auth).then(() => location.reload());
+        });
 
-            function MessageBubble({ msg, mine }) {
-                const [show, setShow] = useState(!msg.encrypted);
-                const text = msg.encrypted ? decryptMirror3(msg.text) : msg.text;
-
-                return ( <
-                    div className = { `flex ${mine ? "justify-end" : "justify-start"}` } >
-                    <
-                    div className = { `max-w-[70%] px-4 py-3 rounded-2xl ${mine ? "bg-brand" : "bg-dark-bubble"}` } >
-                    {
-                        msg.encrypted && <
-                        div className = "text-xs text-green-300 mb-1" >
-                        🔒 ЗЕРКАЛО - 3 <
-                        button className = "ml-2 underline"
-                        onClick = {
-                            () => setShow(!show) } >
-                        { show ? "скрыть" : "открыть" } <
-                        /button> <
-                        /div>
-                    } <
-                    p className = "break-words" > { show ? text : msg.text } < /p> <
-                    div className = "text-xs opacity-60 text-right" > { msg.time } < /div> <
-                    /div> <
-                    /div>
-                );
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                hide(el('screen-auth'));
+                Notification.requestPermission();
+                await synchronizeUserAccount(user);
+            } else {
+                show(el('screen-auth'));
+                hide(el('screen-app'));
             }
+        });
 
-            // --- Основной компонент ---
-            function App() {
-                const [user, setUser] = useState(null);
-                const [ready, setReady] = useState(false);
-                const [contacts, setContacts] = useState([]);
-                const [search, setSearch] = useState("");
-                const [found, setFound] = useState(null);
-                const [chat, setChat] = useState(null);
-                const [messages, setMessages] = useState([]);
-                const [input, setInput] = useState("");
-                const bottom = useRef();
+        async function synchronizeUserAccount(user) {
+            const userRef = doc(db, "users", user.uid);
+            const snap = await getDoc(userRef);
 
-                // --- Инициализация Firebase и аутентификация ---
-                useEffect(() => {
-                    const start = () => {
-                        const { onAuthStateChanged } = window.FB_AUTH;
-                        onAuthStateChanged(window.auth, async (firebaseUser) => {
-                            if (!firebaseUser) {
-                                await window.FB_AUTH.signInAnonymously(window.auth);
-                                return;
-                            }
-                            const uid = firebaseUser.uid;
-                            const username = "air_" + uid.slice(0, 8);
-                            const ref = window.FB.doc(window.db, "users", uid);
-                            const snap = await window.FB.getDoc(ref);
+            if (snap.exists()) {
+                me = snap.data();
+                await updateDoc(userRef, { isOnline: true, lastSeen: serverTimestamp() });
+                startApplication();
+            } else {
+                show(el('screen-setup'));
+                setupUsernameValidationLogic();
+            }
+        }
 
-                            if (!snap.exists()) {
-                                await window.FB.setDoc(ref, {
-                                    uid,
-                                    username,
-                                    displayName: "Пользователь " + username,
-                                    online: true,
-                                    created: window.FB.serverTimestamp()
-                                });
-                            }
+        // Валидация уникальности никнейма в реальном времени
+        function setupUsernameValidationLogic() {
+            const input = el('input-setup-username');
+            const status = el('setup-username-status');
+            const btn = el('btn-complete-setup');
 
-                            const data = (await window.FB.getDoc(ref)).data();
-                            setUser(data);
-                            setReady(true);
-                        });
-                    };
+            let timer;
+            input.addEventListener('input', () => {
+                clearTimeout(timer);
+                hide(status);
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
 
-                    if (window.auth) {
-                        start();
+                const val = input.value.trim().toLowerCase();
+                if (val.length < 3) {
+                    status.textContent = "Минимум 3 символа"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                    return;
+                }
+                if (/[^a-z0-9_]/.test(val)) {
+                    status.textContent = "Только a-z, 0-9 и подчёркивание"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                    return;
+                }
+
+                timer = setTimeout(async () => {
+                    const q = query(collection(db, "users"), where("username", "==", val));
+                    const res = await getDocs(q);
+                    if (!res.empty) {
+                        status.textContent = "Этот никнейм уже занят"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
                     } else {
-                        window.addEventListener("firebase-ready", start);
+                        status.textContent = "Никнейм свободен!"; status.className = "text-green-400 text-xs mt-1 font-semibold"; show(status);
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
                     }
-                }, []);
+                }, 400);
+            });
+        }
 
-                // --- Загрузка списка контактов ---
-                useEffect(() => {
-                    if (!user) return;
+        el('btn-complete-setup').addEventListener('click', async () => {
+            const user = auth.currentUser;
+            const username = el('input-setup-username').value.trim().toLowerCase();
+            
+            const payload = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName || username,
+                photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${username}&background=5865f2&color=fff`,
+                username: username,
+                bio: "Использую MChat!",
+                createdAt: serverTimestamp(),
+                isOnline: true,
+                lastSeen: serverTimestamp()
+            };
 
-                    const q = window.FB.query(
-                        window.FB.collection(window.db, "users"),
-                        window.FB.where("uid", "!=", user.uid)
-                    );
+            await setDoc(doc(db, "users", user.uid), payload);
+            me = payload;
+            hide(el('screen-setup'));
+            startApplication();
+        });
 
-                    const unsub = window.FB.onSnapshot(q, snap => {
-                        setContacts(snap.docs.map(d => d.data()));
-                    });
+        // Запуск интерфейса
+        function startApplication() {
+            show(el('screen-app'));
+            el('ui-my-avatar').src = me.photoURL;
+            el('ui-my-name').textContent = me.displayName;
+            el('ui-my-username').textContent = `@${me.username}`;
 
-                    return () => unsub();
-                }, [user]);
+            setupTabRouting();
+            renderSidebarData();
+            setupGlobalEventListeners();
+        }
 
-                // --- Загрузка сообщений выбранного чата ---
-                useEffect(() => {
-                    if (!user || !chat) return;
+        // Маршрутизация вкладок левого сайдбара
+        function setupTabRouting() {
+            const tabs = ['chats', 'friends', 'search'];
+            tabs.forEach(t => {
+                el(`tab-${t}`).addEventListener('click', () => {
+                    tabs.forEach(x => el(`tab-${x}`).classList.remove('active-tab'));
+                    el(`tab-${t}`).classList.add('active-tab');
+                    activeTab = t;
+                    renderSidebarData();
+                });
+            });
+        }
 
-                    const ids = [user.uid, chat.uid].sort();
-                    const chatId = ids.join("_");
+        // Рендеринг данных сайдбара в зависимости от вкладки
+        function renderSidebarData() {
+            const container = el('list-container');
+            container.innerHTML = '';
 
-                    const q = window.FB.query(
-                        window.FB.collection(window.db, "chats", chatId, "messages"),
-                        window.FB.orderBy("created", "asc")
-                    );
+            if (activeListeners.sidebar) { activeListeners.sidebar(); activeListeners.sidebar = null; }
 
-                    const unsub = window.FB.onSnapshot(q, snap => {
-                        setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                        setTimeout(() => {
-                            bottom.current?.scrollIntoView({ behavior: "smooth" });
-                        }, 100);
-                    });
+            if (activeTab === 'chats') {
+                const q = query(collection(db, "chats"), where("participants", "array-contains", me.uid), orderBy("updatedAt", "desc"));
+                activeListeners.sidebar = onSnapshot(q, async (snap) => {
+                    container.innerHTML = '';
+                    if (snap.empty) {
+                        container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8">Нет активных чатов</div>`;
+                        return;
+                    }
+                    for (const chatDoc of snap.docs) {
+                        const chatData = chatDoc.data();
+                        const item = document.createElement('div');
+                        item.className = `flex items-center gap-3 p-2.5 rounded cursor-pointer transition hover:bg-brandBg ${activeChat?.id === chatDoc.id ? 'bg-brandBg' : ''}`;
+                        
+                        let title = chatData.name || "Групповой чат";
+                        let avatar = chatData.photoURL || "https://ui-avatars.com/api/?name=Group&background=4f545c";
+                        let statusMarker = '';
 
-                    return () => unsub();
-                }, [chat, user]);
+                        if (chatData.type === 'direct') {
+                            const companionId = chatData.participants.find(p => p !== me.uid);
+                            const companionSnap = await getDoc(doc(db, "users", companionId));
+                            if (companionSnap.exists()) {
+                                const comp = companionSnap.data();
+                                title = comp.displayName;
+                                avatar = comp.photoURL;
+                                statusMarker = `<div class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-sidebarBg ${comp.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>`;
+                            }
+                        }
 
-                // --- Поиск пользователя ---
-                async function searchUser() {
-                    const value = search.trim();
-                    if (!value) {
-                        setFound(null);
+                        item.innerHTML = `
+                            <div class="relative flex-shrink-0">
+                                <img src="${avatar}" class="w-11 h-11 rounded-full object-cover bg-gray-700">
+                                ${statusMarker}
+                            </div>
+                            <div class="flex-1 overflow-hidden">
+                                <div class="flex justify-between items-center mb-0.5">
+                                    <span class="text-sm font-bold text-white truncate">${title}</span>
+                                    <span class="text-[10px] text-textMuted">${chatData.updatedAt ? new Date(chatData.updatedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
+                                </div>
+                                <p class="text-xs text-textMuted truncate">${chatData.lastMessage || 'Сообщений нет'}</p>
+                            </div>
+                        `;
+                        item.onclick = () => selectActiveChat(chatDoc.id, chatData.type, chatData, title, avatar);
+                        container.appendChild(item);
+                    }
+                }, () => {});
+
+            } else if (activeTab === 'friends') {
+                // Запрос друзей и входящих заявок
+                const qReq = query(collection(db, "friend_requests"), where("toId", "==", me.uid), where("status", "==", "pending"));
+                activeListeners.sidebar = onSnapshot(qReq, async (snapReq) => {
+                    container.innerHTML = '';
+                    
+                    // Сначала рендерим заявки
+                    if (!snapReq.empty) {
+                        const header = document.createElement('div');
+                        header.className = "text-[10px] uppercase font-bold text-accentBtn px-2 mb-1 mt-2";
+                        header.textContent = "Заявки в друзья";
+                        container.appendChild(header);
+
+                        for (const reqDoc of snapReq.docs) {
+                            const req = reqDoc.data();
+                            const uSnap = await getDoc(doc(db, "users", req.fromId));
+                            if (uSnap.exists()) {
+                                const u = uSnap.data();
+                                const div = document.createElement('div');
+                                div.className = "bg-brandBg p-2 rounded flex items-center justify-between mb-1";
+                                div.innerHTML = `
+                                    <div class="flex items-center gap-2 truncate">
+                                        <img src="${u.photoURL}" class="w-8 h-8 rounded-full object-cover">
+                                        <div class="truncate text-xs"><p class="font-bold text-white truncate">${u.displayName}</p><p class="text-textMuted text-[10px]">@${u.username}</p></div>
+                                    </div>
+                                    <div class="flex gap-1 flex-shrink-0">
+                                        <button class="bg-green-600 hover:bg-green-700 p-1 px-2 rounded text-[10px] font-bold text-white" id="accept-${reqDoc.id}"><i class="fa-solid fa-check"></i></button>
+                                        <button class="bg-red-600 hover:bg-red-700 p-1 px-2 rounded text-[10px] font-bold text-white" id="reject-${reqDoc.id}"><i class="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                `;
+                                container.appendChild(div);
+
+                                el(`accept-${reqDoc.id}`).onclick = async () => {
+                                    await updateDoc(doc(db, "friend_requests", reqDoc.id), { status: "accepted" });
+                                    await addDoc(collection(db, "friendships"), { user1: me.uid, user2: u.uid, createdAt: serverTimestamp() });
+                                    toast(`Вы подружились с ${u.displayName}`);
+                                    renderSidebarData();
+                                };
+                                el(`reject-${reqDoc.id}`).onclick = async () => {
+                                    await deleteDoc(doc(db, "friend_requests", reqDoc.id));
+                                    renderSidebarData();
+                                };
+                            }
+                        }
+                    }
+
+                    // Затем рендерим список друзей
+                    const headerF = document.createElement('div');
+                    headerF.className = "text-[10px] uppercase font-bold text-textMuted px-2 mb-1 mt-4";
+                    headerF.textContent = "Все друзья";
+                    container.appendChild(headerF);
+
+                    const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid));
+                    const qF2 = query(collection(db, "friendships"), where("user2", "==", me.uid));
+                    
+                    const [res1, res2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
+                    const friendIds = [];
+                    res1.forEach(d => friendIds.push(d.data().user2));
+                    res2.forEach(d => friendIds.push(d.data().user1));
+
+                    if (friendIds.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = "text-textMuted text-xs text-center mt-4";
+                        empty.textContent = "Список друзей пуст";
+                        container.appendChild(empty);
                         return;
                     }
 
-                    const q = window.FB.query(
-                        window.FB.collection(window.db, "users"),
-                        window.FB.where("username", "==", value)
-                    );
+                    for (const fId of friendIds) {
+                        const uSnap = await getDoc(doc(db, "users", fId));
+                        if (uSnap.exists()) {
+                            const u = uSnap.data();
+                            const div = document.createElement('div');
+                            div.className = "flex items-center justify-between p-2 rounded hover:bg-brandBg cursor-pointer transition";
+                            div.innerHTML = `
+                                <div class="flex items-center gap-2.5 truncate" id="view-friend-${u.uid}">
+                                    <div class="relative flex-shrink-0">
+                                        <img src="${u.photoURL}" class="w-9 h-9 rounded-full object-cover">
+                                        <div class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-sidebarBg ${u.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>
+                                    </div>
+                                    <div class="truncate text-xs">
+                                        <p class="font-bold text-white truncate">${u.displayName}</p>
+                                        <p class="text-textMuted text-[10px]">@${u.username}</p>
+                                    </div>
+                                </div>
+                                <button class="text-textMuted hover:text-accentBtn p-2" id="msg-friend-${u.uid}"><i class="fa-solid fa-message"></i></button>
+                            `;
+                            container.appendChild(div);
 
-                    const snap = await window.FB.getDocs(q);
-                    if (!snap.empty) {
-                        setFound(snap.docs[0].data());
-                    } else {
-                        setFound(null);
+                            el(`view-friend-${u.uid}`).onclick = () => openUserProfileModal(u);
+                            el(`msg-friend-${u.uid}`).onclick = () => initOrOpenDirectChat(u);
+                        }
                     }
+                });
+
+            } else if (activeTab === 'search') {
+                container.innerHTML = `
+                    <div class="p-1">
+                        <input type="text" id="sidebar-search-input" class="w-full bg-brandBg text-xs text-white p-2.5 rounded border border-gray-700 focus:outline-none focus:border-accentBtn" placeholder="Введите @никнейм...">
+                        <div id="search-results-sub" class="mt-3 flex flex-col gap-1"></div>
+                    </div>
+                `;
+
+                el('sidebar-search-input').addEventListener('input', async (e) => {
+                    const term = e.target.value.trim().toLowerCase().replace('@', '');
+                    const subContainer = el('search-results-sub');
+                    subContainer.innerHTML = '';
+                    if (!term) return;
+
+                    const q = query(collection(db, "users"), where("username", ">=", term), where("username", "<=", term + '\uf8ff'), limit(15));
+                    const snap = await getDocs(q);
+                    
+                    if (snap.empty) {
+                        subContainer.innerHTML = `<div class="text-textMuted text-xs text-center mt-4">Ничего не найдено</div>`;
+                        return;
+                    }
+
+                    snap.forEach(docSnap => {
+                        const u = docSnap.data();
+                        if (u.uid === me.uid) return;
+
+                        const div = document.createElement('div');
+                        div.className = "flex items-center justify-between p-2 rounded bg-brandBg hover:bg-gray-700 cursor-pointer transition";
+                        div.innerHTML = `
+                            <div class="flex items-center gap-2 truncate">
+                                <img src="${u.photoURL}" class="w-8 h-8 rounded-full object-cover">
+                                <div class="truncate text-xs"><p class="font-bold text-white truncate">${u.displayName}</p><p class="text-textMuted text-[10px]">@${u.username}</p></div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-textMuted text-xs pr-2"></i>
+                        `;
+                        div.onclick = () => openUserProfileModal(u);
+                        subContainer.appendChild(div);
+                    });
+                });
+            }
+        }
+
+        // Логика инициализации ЛС
+        async function initOrOpenDirectChat(otherUser) {
+            const q = query(collection(db, "chats"), where("type", "==", "direct"), where("participants", "array-contains", me.uid));
+            const snap = await getDocs(q);
+            let targetChatId = null;
+            let targetChatData = null;
+
+            snap.forEach(d => {
+                const data = d.data();
+                if (data.participants.includes(otherUser.uid)) {
+                    targetChatId = d.id;
+                    targetChatData = data;
                 }
+            });
 
-                // --- Отправка сообщения ---
-                async function send() {
-                    if (!input.trim() || !chat) return;
+            if (!targetChatId) {
+                const newChat = {
+                    type: 'direct',
+                    participants: [me.uid, otherUser.uid],
+                    updatedAt: serverTimestamp(),
+                    lastMessage: '',
+                    pinnedMessageId: null
+                };
+                const docRef = await addDoc(collection(db, "chats"), newChat);
+                targetChatId = docRef.id;
+                targetChatData = newChat;
+            }
 
-                    const ids = [user.uid, chat.uid].sort();
-                    const chatId = ids.join("_");
-                    const text = encryptMirror3(input);
+            el('tab-chats').click();
+            selectActiveChat(targetChatId, 'direct', targetChatData, otherUser.displayName, otherUser.photoURL);
+        }
 
-                    await window.FB.addDoc(
-                        window.FB.collection(window.db, "chats", chatId, "messages"), {
-                            text,
-                            encrypted: true,
-                            sender: user.uid,
-                            created: window.FB.serverTimestamp(),
-                            time: new Date().toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit"
-                            })
+        // Выбор активного чата
+        function selectActiveChat(chatId, type, data, computedTitle, computedAvatar) {
+            activeChat = { id: chatId, type, data, title: computedTitle, avatar: computedAvatar };
+            hide(el('chat-empty-state'));
+
+            el('active-chat-avatar').src = computedAvatar;
+            el('active-chat-title').textContent = computedTitle;
+            el('active-chat-status').textContent = type === 'direct' ? 'Пользователь' : 'Групповой чат';
+
+            // Настройка экшенов шапки
+            const actionContainer = el('active-chat-actions');
+            actionContainer.innerHTML = '';
+            if (type === 'group') {
+                actionContainer.innerHTML = `<button id="btn-manage-group" class="hover:text-white transition"><i class="fa-solid fa-users-gear text-lg"></i></button>`;
+                el('btn-manage-group').onclick = () => openGroupManagementModal();
+            }
+
+            // Переподписка на сообщения
+            if (activeListeners.messages) activeListeners.messages();
+            const qMsg = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
+            
+            let initialLoad = true;
+            activeListeners.messages = onSnapshot(qMsg, (snap) => {
+                const area = el('messages-area');
+                area.innerHTML = '';
+                
+                snap.forEach(docSnap => {
+                    renderSingleMessage(docSnap.id, docSnap.data());
+                });
+                
+                area.scrollTop = area.scrollHeight;
+
+                if (!initialLoad) {
+                    playNotificationSound('msg');
+                }
+                initialLoad = false;
+            });
+
+            // Отслеживание закрепленного сообщения
+            if (activeListeners.pinned) activeListeners.pinned();
+            activeListeners.pinned = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
+                const cData = dSnap.data();
+                if (cData?.pinnedMessageId) {
+                    getDoc(doc(db, "chats", chatId, "messages", cData.pinnedMessageId)).then(mSnap => {
+                        if (mSnap.exists()) {
+                            el('pinned-text').textContent = mSnap.data().text || "Медиафайл";
+                            show(el('pinned-message-bar'));
+                            el('btn-jump-pinned').onclick = () => {
+                                const element = document.getElementById(`msg-${mSnap.id}`);
+                                if (element) element.scrollIntoView({ behavior: 'smooth' });
+                            };
                         }
-                    );
-
-                    setInput("");
+                    });
+                } else {
+                    hide(el('pinned-message-bar'));
                 }
+            });
 
-                if (!ready) {
-                    return <div className = "h-screen flex items-center justify-center" > Загрузка AirGram... < /div>;
-                }
-
-                return ( <
-                        div className = "h-screen bg-dark-bg flex" >
-                        <
-                        div className = "w-80 bg-dark-panel border-r border-dark-line p-4 flex flex-col" >
-                        <
-                        h1 className = "text-2xl font-bold text-brand mb-4" > AirGram < /h1>
-
-                        <
-                        div className = "mb-4" >
-                        <
-                        input className = "w-full bg-slate-900 p-2 rounded"
-                        placeholder = "найти пользователя"
-                        value = { search }
-                        onChange = { e => setSearch(e.target.value) }
-                        /> <
-                        button className = "mt-2 bg-brand px-3 py-2 rounded"
-                        onClick = { searchUser } >
-                        Поиск <
-                        /button> <
-                        /div>
-
-                        {
-                            found && <
-                            div onClick = {
-                                () => setChat(found) }
-                            className = "p-3 bg-slate-800 rounded cursor-pointer" >
-                            { found.username } <
-                            /div>
+            // Индикатор печати
+            if (activeListeners.typing) activeListeners.typing();
+            activeListeners.typing = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
+                const cData = dSnap.data();
+                if (cData && cData.typing && cData.typing !== me.uid) {
+                    getDoc(doc(db, "users", cData.typing)).then(uSnap => {
+                        if (uSnap.exists()) {
+                            el('typing-text').textContent = `${uSnap.data().displayName} печатает...`;
+                            show(el('typing-indicator-bar'));
                         }
-
-                        <
-                        hr className = "my-4 opacity-20" / >
-
-                        <
-                        div className = "flex-1 overflow-y-auto" > {
-                            contacts.map(c => ( <
-                                div key = { c.uid }
-                                onClick = {
-                                    () => setChat(c) }
-                                className = "p-3 hover:bg-slate-800 cursor-pointer rounded" >
-                                { c.username } <
-                                /div>
-                            ))
-                        } <
-                        /div> <
-                        /div>
-
-                        <
-                        div className = "flex-1 flex flex-col" > {
-                            chat ? ( <
-                                >
-                                <
-                                div className = "p-4 border-b border-dark-line" > { chat.username } < /div>
-
-                                <
-                                div className = "flex-1 overflow-y-auto p-4 space-y-3" >
-                                { messages.map(m => ( <
-                                    MessageBubble key = { m.id }
-                                    msg = { m }
-                                    mine = { m.sender === user.uid }
-                                    />
-                                )) } <
-                                div ref = { bottom }
-                                /> <
-                                /div>
-
-                                <
-                                div className = "p-4 border-t border-dark-line flex gap-2" >
-                                <
-                                input className = "flex-1 bg-slate-900 rounded p-3"
-                                value = { input }
-                                onChange = { e => setInput(e.target.value) }
-                                onKeyDown = { e => e.key === "Enter" && send() }
-                                /> <
-                                button className = "bg-brand px-5 rounded"
-                                onClick = { send } >
-                                ➤ <
-                                /button> <
-                                /div> <
-                                />
-                            ) : <
-                            div className = "flex-1 flex items-center justify-center text-gray-400" >
-                            Выберите чат <
-                            /div>
-                        } <
-                        /div> <
-                        /div>
-                    );
+                    });
+                } else {
+                    hide(el('typing-indicator-bar'));
                 }
+            });
+        }
 
-                // --- Рендеринг приложения ---
-                ReactDOM.createRoot(document.getElementById("root")).render( < App / > );
+        // Рендеринг единичного сообщения
+        function renderSingleMessage(msgId, msg) {
+            const area = el('messages-area');
+            const isMe = msg.senderId === me.uid;
+
+            const msgDiv = document.createElement('div');
+            msgDiv.id = `msg-${msgId}`;
+            msgDiv.className = `flex w-full gap-3 ${isMe ? 'justify-end' : 'justify-start'}`;
+
+            // Сборка метаданных ответа
+            let replyBlockHTML = '';
+            if (msg.replyTo) {
+                replyBlockHTML = `
+                    <div class="bg-black bg-opacity-30 p-1.5 rounded text-[11px] mb-1 text-textMuted border-l-2 border-gray-500 truncate max-w-xs">
+                        <i class="fa-solid fa-share mr-1"></i> ${msg.replyTo.senderName}: ${msg.replyTo.text}
+                    </div>
+                `;
+            }
+
+            // Сборка контента
+            let bodyHTML = `<p class="text-sm select-text whitespace-pre-wrap">${msg.text || ''}</p>`;
+            if (msg.type === 'image') {
+                bodyHTML = `
+                    <div class="flex flex-col gap-1">
+                        <img src="${msg.fileUrl}" class="rounded max-w-xs max-h-60 object-cover cursor-zoom-in bg-brandBg border border-gray-700" onclick="window.openFullImage('${msg.fileUrl}')">
+                        ${msg.text ? `<p class="text-sm select-text mt-1">${msg.text}</p>` : ''}
+                    </div>
+                `;
+            } else if (msg.type === 'file') {
+                bodyHTML = `
+                    <div class="flex items-center gap-3 bg-brandBg p-2 rounded.md border border-gray-800">
+                        <i class="fa-solid fa-file-shield text-2xl text-accentBtn"></i>
+                        <div class="overflow-hidden max-w-xs">
+                            <p class="text-xs font-bold text-white truncate">${msg.fileName}</p>
+                            <a href="${msg.fileUrl}" target="_blank" download class="text-[10px] text-accentBtn hover:underline"><i class="fa-solid fa-download mr-1"></i>Скачать файл</a>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const timeString = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
+
+            msgDiv.innerHTML = `
+                <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[70%] group">
+                    <span class="text-[10px] text-textMuted mb-0.5 px-1">${msg.senderName}</span>
+                    <div class="p-3 rounded-lg relative ${isMe ? 'bg-accentBtn text-white rounded-br-none' : 'bg-sidebarBg text-textMain rounded-bl-none'} shadow">
+                        ${replyBlockHTML}
+                        ${bodyHTML}
+                        <div class="flex items-center justify-end gap-1 mt-1 text-[9px] text-textMuted select-none">
+                            ${msg.isEdited ? '<span class="italic text-[8px]">(ред.)</span>' : ''}
+                            <span>${timeString}</span>
+                            ${isMe ? '<i class="fa-solid fa-check-double text-green-400 ml-0.5"></i>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Подключение контекстного меню
+            msgDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                openMessageContextMenu(e.clientX, e.clientY, msgId, msg);
+            });
+
+            area.appendChild(msgDiv);
+        }
+
+        // Логика контекстного меню сообщений
+        function openMessageContextMenu(x, y, msgId, msg) {
+            const menu = el('msg-context-menu');
+            show(menu);
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+
+            contextedMessage = { id: msgId, data: msg };
+
+            // Управление видимостью кнопок
+            const isMyMsg = msg.senderId === me.uid;
+            if (isMyMsg) { show(el('ctx-edit')); show(el('ctx-delete')); } 
+            else { hide(el('ctx-edit')); hide(el('ctx-delete')); }
+        }
+
+        // Закрытие контекстного меню при любом клике
+        document.addEventListener('click', () => hide(el('msg-context-menu')));
+
+        // Экшены контекстного меню
+        el('ctx-reply').onclick = () => {
+            replyingToMessage = contextedMessage;
+            el('reply-user-name').textContent = replyingToMessage.data.senderName;
+            el('reply-msg-text').textContent = replyingToMessage.data.text || '[Медиафайлы]';
+            show(el('reply-preview-bar'));
+            el('input-message').focus();
+        };
+
+        el('btn-cancel-reply').onclick = () => {
+            replyingToMessage = null;
+            hide(el('reply-preview-bar'));
+        };
+
+        el('ctx-copy').onclick = () => {
+            if (contextedMessage?.data.text) {
+                navigator.clipboard.writeText(contextedMessage.data.text);
+                toast("Текст скопирован в буфер");
+            }
+        };
+
+        el('ctx-delete').onclick = async () => {
+            if (confirm("Удалить это сообщение для всех?")) {
+                await deleteDoc(doc(db, "chats", activeChat.id, "messages", contextedMessage.id));
+                toast("Сообщение удалено");
+            }
+        };
+
+        el('ctx-edit').onclick = () => {
+            if (contextedMessage?.data.type !== 'text') return;
+            const newText = prompt("Редактировать сообщение:", contextedMessage.data.text);
+            if (newText && newText.trim() !== contextedMessage.data.text) {
+                updateDoc(doc(db, "chats", activeChat.id, "messages", contextedMessage.id), {
+                    text: newText.trim(),
+                    isEdited: true
+                });
+            }
+        };
+
+        el('ctx-pin').onclick = async () => {
+            const chatRef = doc(db, "chats", activeChat.id);
+            if (activeChat.data.pinnedMessageId === contextedMessage.id) {
+                await updateDoc(chatRef, { pinnedMessageId: null });
+                toast("Сообщение откреплено");
+            } else {
+                await updateDoc(chatRef, { pinnedMessageId: contextedMessage.id });
+                toast("Сообщение закреплено");
+            }
+        };
+
+        window.openFullImage = (url) => {
+            el('full-size-image-element').src = url;
+            show(el('modal-image-view'));
+        };
+
+        // Отправка сообщений
+        async function handleMessageSendingFlow() {
+            const text = el('input-message').value.trim();
+            if (!text && !selectedFile) return;
+            if (!activeChat) return;
+
+            // Проверка пасхалки из системного промпта
+            if (text === '😿') {
+                playNotificationSound('meow');
+            }
+
+            el('input-message').value = '';
+            hide(el('emoji-picker'));
+
+            let payload = {
+                senderId: me.uid,
+                senderName: me.displayName,
+                createdAt: serverTimestamp(),
+                replyTo: replyingToMessage ? { msgId: replyingToMessage.id, text: replyingToMessage.data.text || '[Файл]', senderName: replyingToMessage.data.senderName } : null
+            };
+
+            if (selectedFile) {
+                show(el('upload-progress-container'));
+                const fileRef = ref(storage, `chats/${activeChat.id}/${Date.now()}_${selectedFile.name}`);
+                const uploadTask = uploadBytesResumable(fileRef, selectedFile);
+
+                uploadTask.on('state_changed', 
+                    (snap) => {
+                        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+                        el('upload-progress-bar').style.width = `${progress}%`;
+                    },
+                    (err) => { toast(err.message, true); hide(el('upload-progress-container')); },
+                    async () => {
+                        const url = await getDownloadURL(uploadTask.snapshot.ref);
+                        payload.type = selectedFile.type.startsWith('image/') ? 'image' : 'file';
+                        payload.fileUrl = url;
+                        payload.fileName = selectedFile.name;
+                        payload.text = text; // Описание к картинке/файлу, если есть
+                        
+                        await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
+                        await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text ? text : `📎 ${selectedFile.name}`, updatedAt: serverTimestamp() });
+                        
+                        resetFilePreviewState();
+                    }
+                );
+            } else {
+                payload.type = 'text';
+                payload.text = text;
+
+                await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
+                await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text, updatedAt: serverTimestamp() });
+            }
+
+            if (replyingToMessage) {
+                replyingToMessage = null;
+                hide(el('reply-preview-bar'));
+            }
+        }
+
+        el('btn-send-message').onclick = handleMessageSendingFlow;
+        el('input-message').onkeydown = (e) => { if(e.key === 'Enter') handleMessageSendingFlow(); };
+
+        // Индикатор "Печатает..." (Debounce инпута)
+        el('input-message').addEventListener('input', () => {
+            if (!activeChat) return;
+            updateDoc(doc(db, "chats", activeChat.id), { typing: me.uid });
+            
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                updateDoc(doc(db, "chats", activeChat.id), { typing: null });
+            }, 1500);
+        });
+
+        // Файловый менеджмент
+        el('btn-trigger-upload').onclick = () => el('input-file-select').click();
+        el('input-file-select').onchange = (e) => {
+            if (e.target.files.length > 0) setupFileForPreview(e.target.files[0]);
+        };
+
+        function setupFileForPreview(file) {
+            selectedFile = file;
+            el('preview-file-name').textContent = file.name;
+            el('preview-file-size').textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+            show(el('file-preview-bar'));
+        }
+
+        function resetFilePreviewState() {
+            selectedFile = null;
+            hide(el('file-preview-bar'));
+            hide(el('upload-progress-container'));
+            el('upload-progress-bar').style.width = '0%';
+            el('input-file-select').value = '';
+        }
+        el('btn-cancel-file').onclick = resetFilePreviewState;
+
+        // Панель эмодзи
+        el('btn-emoji').onclick = () => el('emoji-picker').classList.toggle('hidden');
+        document.querySelectorAll('.emoji-item').forEach(btn => {
+            btn.onclick = () => {
+                el('input-message').value += btn.textContent;
+                el('input-message').focus();
+            };
+        });
+
+        // Драг-энд-дроп файлов в окно чата
+        const chatWindow = el('chat-window');
+        chatWindow.addEventListener('dragover', (e) => { e.preventDefault(); chatWindow.classList.add('opacity-75'); });
+        chatWindow.addEventListener('dragleave', () => chatWindow.classList.remove('opacity-75'));
+        chatWindow.addEventListener('drop', (e) => {
+            e.preventDefault();
+            chatWindow.classList.remove('opacity-75');
+            if(e.dataTransfer.files.length > 0) setupFileForPreview(e.dataTransfer.files[0]);
+        });
+
+        // Управление модальными окнами: Мой профиль
+        el('ui-my-profile-trigger').onclick = () => {
+            el('modal-profile-avatar').src = me.photoURL;
+            el('modal-profile-email').textContent = me.email;
+            el('modal-profile-name').value = me.displayName;
+            el('modal-profile-username').value = me.username;
+            el('modal-profile-bio').value = me.bio || '';
+            el('modal-profile-joined').textContent = `В системе с: ${me.createdAt ? new Date(me.createdAt.toDate()).toLocaleDateString() : '...'}`;
+            show(el('modal-profile'));
+        };
+
+        // Загрузка нового аватара для профиля
+        el('avatar-upload-trigger').onclick = () => el('input-avatar-file').click();
+        el('input-avatar-file').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const fileRef = ref(storage, `avatars/${me.uid}`);
+            toast("Загрузка аватара...");
+            await uploadBytesResumable(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+            
+            el('modal-profile-avatar').src = url;
+            await updateDoc(doc(db, "users", me.uid), { photoURL: url });
+            me.photoURL = url;
+            el('ui-my-avatar').src = url;
+            toast("Аватар успешно обновлен");
+        };
+
+        // Сохранение изменений текстового профиля с проверкой уникальности никнейма
+        el('btn-save-profile').onclick = async () => {
+            const name = el('modal-profile-name').value.trim();
+            const username = el('modal-profile-username').value.trim().toLowerCase();
+            const bio = el('modal-profile-bio').value.trim();
+
+            if (!name || username.length < 3) { toast("Заполните корректно обязательные поля", true); return; }
+
+            if (username !== me.username) {
+                const q = query(collection(db, "users"), where("username", "==", username));
+                const res = await getDocs(q);
+                if (!res.empty) { toast("Этот никнейм уже занят другого пользователя", true); return; }
+            }
+
+            const upPayload = { displayName: name, username, bio };
+            await updateDoc(doc(db, "users", me.uid), upPayload);
+            me = { ...me, ...upPayload };
+            
+            el('ui-my-name').textContent = name;
+            el('ui-my-username').textContent = `@${username}`;
+            hide(el('modal-profile'));
+            toast("Профиль сохранен");
+        };
+
+        // Модалка просмотра чужого юзер-профиля
+        async function openUserProfileModal(user) {
+            el('view-user-avatar').src = user.photoURL;
+            el('view-user-name').textContent = user.displayName;
+            el('view-user-username').textContent = `@${user.username}`;
+            el('view-user-bio').textContent = user.bio || 'Описание отсутствует';
+            el('view-user-status').textContent = user.isOnline ? 'В сети (Онлайн)' : 'Не в сети (Офлайн)';
+
+            const actionContainer = el('view-user-actions');
+            actionContainer.innerHTML = '';
+
+            // Определение связи (Уже друзья или отправлен запрос)
+            const qReq1 = query(collection(db, "friend_requests"), where("fromId", "==", me.uid), where("toId", "==", user.uid));
+            const qReq2 = query(collection(db, "friend_requests"), where("fromId", "==", user.uid), where("toId", "==", me.uid));
+            const [snapReq1, snapReq2] = await Promise.all([getDocs(qReq1), getDocs(qReq2)]);
+
+            let hasPendingRequest = !snapReq1.empty || !snapReq2.empty;
+
+            // Проверка дружбы
+            const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid), where("user2", "==", user.uid));
+            const qF2 = query(collection(db, "friendships"), where("user1", "==", user.uid), where("user2", "==", me.uid));
+            const [snapF1, snapF2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
+            
+            let isFriend = !snapF1.empty || !snapF2.empty;
+
+            if (isFriend) {
+                actionContainer.innerHTML = `<button class="w-full bg-red-600 hover:bg-red-700 p-2 rounded text-xs font-bold text-white" id="btn-action-unfriend">Удалить из друзей</button>`;
+                el('btn-action-unfriend').onclick = async () => {
+                    snapF1.forEach(async d => await deleteDoc(doc(db, "friendships", d.id)));
+                    snapF2.forEach(async d => await deleteDoc(doc(db, "friendships", d.id)));
+                    toast("Удален из списка друзей");
+                    hide(el('modal-user-view'));
+                    renderSidebarData();
+                };
+            } else if (hasPendingRequest) {
+                actionContainer.innerHTML = `<button class="w-full bg-gray-600 p-2 rounded text-xs font-bold text-white cursor-not-allowed" disabled>Заявка на рассмотрении</button>`;
+            } else {
+                actionContainer.innerHTML = `<button class="w-full bg-accentBtn hover:bg-accentHover p-2 rounded text-xs font-bold text-white" id="btn-action-addfriend">Добавить в друзья</button>`;
+                el('btn-action-addfriend').onclick = async () => {
+                    await addDoc(collection(db, "friend_requests"), { fromId: me.uid, toId: user.uid, status: "pending", createdAt: serverTimestamp() });
+                    toast("Заявка отправлена");
+                    hide(el('modal-user-view'));
+                };
+            }
+
+            show(el('modal-user-view'));
+        }
+
+        // Управление групповыми чатами (Создание)
+        el('btn-open-group-modal').onclick = async () => {
+            el('modal-group-title').textContent = "Создание группы";
+            el('modal-group-name').value = '';
+            hide(el('modal-group-members-management'));
+            show(el('btn-submit-group'));
+            el('btn-submit-group').textContent = "Создать группу";
+
+            // Сбор списка друзей для добавления в новую группу
+            const container = el('modal-group-friends-list');
+            container.innerHTML = '';
+            
+            const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid));
+            const qF2 = query(collection(db, "friendships"), where("user2", "==", me.uid));
+            const [res1, res2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
+            
+            const friendIds = [];
+            res1.forEach(d => friendIds.push(d.data().user2));
+            res2.forEach(d => friendIds.push(d.data().user1));
+
+            for (const fId of friendIds) {
+                const uSnap = await getDoc(doc(db, "users", fId));
+                if (uSnap.exists()) {
+                    const u = uSnap.data();
+                    const label = document.createElement('label');
+                    label.className = "flex items-center gap-2 text-xs text-textMain p-1 hover:bg-gray-700 rounded cursor-pointer";
+                    label.innerHTML = `<input type="checkbox" class="group-checkbox" value="${u.uid}"> <span>${u.displayName} (@${u.username})</span>`;
+                    container.appendChild(label);
+                }
+            }
+
+            el('btn-submit-group').onclick = async () => {
+                const name = el('modal-group-name').value.trim();
+                if(!name) { toast("Укажите название группы", true); return; }
+
+                const selectedIds = [me.uid];
+                document.querySelectorAll('.group-checkbox:checked').forEach(input => selectedIds.push(input.value));
+
+                const newGroupChat = {
+                    type: 'group',
+                    name: name,
+                    photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4f545c&color=fff`,
+                    adminId: me.uid,
+                    participants: selectedIds,
+                    updatedAt: serverTimestamp(),
+                    lastMessage: 'Группа успешно создана',
+                    pinnedMessageId: null
+                };
+
+                await addDoc(collection(db, "chats"), newGroupChat);
+                toast("Группа создана");
+                hide(el('modal-group'));
+            };
+
+            show(el('modal-group'));
+        };
+
+        // Управление участниками группы для админа
+        async function openGroupManagementModal() {
+            if (activeChat.data.adminId !== me.uid) {
+                toast("У вас нет прав администратора для управления", true);
+                return;
+            }
+
+            el('modal-group-title').textContent = "Управление группой";
+            el('modal-group-name').value = activeChat.data.name;
+            hide(el('btn-submit-group'));
+            show(el('modal-group-members-management'));
+
+            const container = el('modal-group-current-members');
+            container.innerHTML = '';
+
+            for (const pId of activeChat.data.participants) {
+                if (pId === me.uid) continue;
+                const uSnap = await getDoc(doc(db, "users", pId));
+                if (uSnap.exists()) {
+                    const u = uSnap.data();
+                    const div = document.createElement('div');
+                    div.className = "flex justify-between items-center bg-brandBg p-1.5 rounded text-xs text-white";
+                    div.innerHTML = `<span>${u.displayName}</span> <button class="bg-red-600 p-1 px-2 rounded text-[10px]" id="kick-${u.uid}">Исключить</button>`;
+                    container.appendChild(div);
+
+                    el(`kick-${u.uid}`).onclick = async () => {
+                        const updatedParticipants = activeChat.data.participants.filter(id => id !== u.uid);
+                        await updateDoc(doc(db, "chats", activeChat.id), { participants: updatedParticipants });
+                        activeChat.data.participants = updatedParticipants;
+                        toast(`Пользователь ${u.displayName} исключен`);
+                        openGroupManagementModal(); // Обновляем
+                    };
+                }
+            }
+            show(el('modal-group'));
+        }
+
+        // Общие закрывашки для всех модальных окон
+        document.querySelectorAll('.modal-close').forEach(btn => {
+            btn.onclick = (e) => e.target.closest('.fixed').classList.add('hidden');
+        });
+
+        function setupGlobalEventListeners() {
+            // Закрытие контекстного клика по экрану
+            window.addEventListener('resize', () => hide(el('msg-context-menu')));
+        }
     </script>
 </body>
-
 </html>
