@@ -3,24 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MChat</title>
+    <title>MChat Messenger</title>
+    <!-- Tailwind CSS & FontAwesome -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
-            theme: { extend: { colors: { discord: '#36393f', discordDark: '#2f3136', discordDarker: '#202225' } } }
+            theme: {
+                extend: {
+                    colors: {
+                        brandBg: '#202225',
+                        sidebarBg: '#2f3136',
+                        chatBg: '#36393f',
+                        accentBtn: '#5865f2',
+                        accentHover: '#4752c4',
+                        textMain: '#dcddde',
+                        textMuted: '#72767d'
+                    }
+                }
+            }
         }
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background-color: #36393f; color: #dcddde; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        body { background-color: #202225; color: #dcddde; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #2f3136; }
-        ::-webkit-scrollbar-thumb { background: #202225; border-radius: 4px; }
-        .hide { display: none !important; }
-        .message-bubble { max-width: 70%; word-wrap: break-word; }
-        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
-        .toast { background: #4f545c; color: white; padding: 12px 20px; border-radius: 4px; margin-top: 10px; opacity: 0; transition: opacity 0.3s; }
+        ::-webkit-scrollbar-thumb { background: #202225; border-radius: 3px; }
+        .active-tab { background-color: #40444b; color: #fff; }
+        .context-menu { position: absolute; z-index: 1000; background: #18191c; border: 1px solid #2f3136; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); width: 180px; }
+        .context-menu button { width: 100%; text-align: left; padding: 8px 12px; font-size: 14px; color: #dcddde; transition: background 0.2s; }
+        .context-menu button:hover { background: #5865f2; color: #fff; }
     </style>
     
     <!-- Firebase Modular SDK v11 -->
@@ -35,522 +48,1249 @@
     }
     </script>
 </head>
-<body class="h-screen w-screen flex antialiased">
+<body class="h-screen w-screen flex antialiased select-none">
 
-    <!-- Toast Notifications -->
-    <div id="toast-container"></div>
+    <!-- Тосты уведомлений -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-    <!-- Login Screen -->
-    <div id="login-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-discord">
-        <div class="bg-discordDark p-8 rounded-lg shadow-xl text-center w-96">
-            <h1 class="text-3xl font-bold mb-6 text-white"><i class="fa-solid fa-comments text-blue-500"></i> MChat</h1>
-            <p class="mb-6 text-gray-400">Войдите, чтобы начать общение</p>
-            <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition">
-                <i class="fa-brands fa-google mr-2"></i> Войти через Google
+    <!-- Элемент контекстного меню -->
+    <div id="msg-context-menu" class="context-menu hidden">
+        <button id="ctx-reply"><i class="fa-solid fa-reply mr-2"></i> Ответить</button>
+        <button id="ctx-edit"><i class="fa-solid fa-pen mr-2"></i> Редактировать</button>
+        <button id="ctx-pin"><i class="fa-solid fa-thumbtack mr-2"></i> Закрепить / Открепить</button>
+        <button id="ctx-copy"><i class="fa-solid fa-copy mr-2"></i> Копировать текст</button>
+        <button id="ctx-delete" class="text-red-400 hover:bg-red-600 hover:text-white"><i class="fa-solid fa-trash mr-2"></i> Удалить</button>
+    </div>
+
+    <!-- Экраны: Авторизация -->
+    <div id="screen-auth" class="absolute inset-0 flex items-center justify-center bg-brandBg z-40">
+        <div class="bg-sidebarBg p-8 rounded-lg shadow-2xl text-center w-full max-w-sm border border-gray-700">
+            <h1 class="text-4xl font-extrabold mb-2 text-white tracking-wider flex items-center justify-center gap-2">
+                <i class="fa-solid fa-circle-nodes text-accentBtn animate-pulse"></i> MCHAT
+            </h1>
+            <p class="text-textMuted text-sm mb-8">Next-gen Realtime Messenger</p>
+            <button id="btn-google-login" class="w-full bg-accentBtn hover:bg-accentHover text-white font-bold py-3 px-4 rounded transition duration-200 flex items-center justify-center gap-3">
+                <i class="fa-brands fa-google text-lg"></i> Войти через Google
             </button>
         </div>
     </div>
 
-    <!-- Setup Profile Modal -->
-    <div id="setup-modal" class="hide absolute inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
-        <div class="bg-discordDark p-8 rounded-lg shadow-xl w-96">
-            <h2 class="text-2xl font-bold mb-4 text-white">Настройка профиля</h2>
-            <div class="mb-4">
-                <label class="block text-sm font-bold mb-2">Уникальное имя пользователя</label>
-                <input type="text" id="setup-username" class="w-full bg-discordDarker text-white p-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="@username">
-                <p id="setup-error" class="text-red-500 text-xs mt-1 hide"></p>
+    <!-- Экраны: Создание юзернейма (Первый вход) -->
+    <div id="screen-setup" class="absolute inset-0 flex items-center justify-center bg-brandBg z-30 hidden">
+        <div class="bg-sidebarBg p-8 rounded-lg shadow-2xl w-full max-w-sm border border-gray-700">
+            <h2 class="text-2xl font-bold mb-2 text-white">Добро пожаловать!</h2>
+            <p class="text-textMuted text-xs mb-6">Выберите уникальное имя пользователя. Оно будет использоваться для поиска вас в системе.</p>
+            <div class="mb-6 relative">
+                <label class="block text-xs font-bold uppercase tracking-wider text-textMain mb-2">Имя пользователя (@)</label>
+                <input type="text" id="input-setup-username" class="w-full bg-brandBg text-white p-3 rounded border border-gray-700 focus:border-accentBtn focus:outline-none transition" placeholder="nickname">
+                <div id="setup-username-status" class="text-xs mt-1 font-semibold hidden"></div>
             </div>
-            <button id="btn-save-setup" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Сохранить</button>
+            <button id="btn-complete-setup" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded transition opacity-50 cursor-not-allowed" disabled>
+                Начать общение
+            </button>
         </div>
     </div>
 
-    <!-- Main App -->
-    <div id="main-app" class="hide flex w-full h-full">
-        <!-- Sidebar -->
-        <div class="w-80 bg-discordDark flex flex-col border-r border-discordDarker">
-            <!-- Header/Profile -->
-            <div class="p-4 bg-discordDarker flex justify-between items-center shadow-md">
-                <div class="flex items-center cursor-pointer hover:opacity-80" id="btn-my-profile">
-                    <img id="my-avatar" src="" class="w-10 h-10 rounded-full mr-3 object-cover">
+    <!-- Главный интерфейс приложения -->
+    <div id="screen-app" class="w-full h-full flex hidden">
+        
+        <!-- Левый сайдбар -->
+        <div class="w-80 bg-sidebarBg flex flex-col flex-shrink-0 border-r border-brandBg">
+            <!-- Верхняя панель профиля -->
+            <div class="p-4 bg-brandBg flex justify-between items-center shadow-md">
+                <div class="flex items-center gap-3 cursor-pointer hover:opacity-80 transition" id="ui-my-profile-trigger">
+                    <div class="relative">
+                        <img id="ui-my-avatar" class="w-10 h-10 rounded-full object-cover bg-gray-600">
+                        <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-brandBg rounded-full"></div>
+                    </div>
+                    <div class="overflow-hidden w-40">
+                        <div id="ui-my-name" class="font-bold text-white text-sm truncate">...</div>
+                        <div id="ui-my-username" class="text-xs text-textMuted truncate">...</div>
+                    </div>
+                </div>
+                <div class="flex gap-2 text-textMuted">
+                    <button id="btn-open-group-modal" title="Создать группу" class="hover:text-white transition p-1"><i class="fa-solid fa-circle-plus"></i></button>
+                    <button id="btn-logout" title="Выйти" class="hover:text-red-400 transition p-1"><i class="fa-solid fa-right-from-bracket"></i></button>
+                </div>
+            </div>
+
+            <!-- Вкладки навигации -->
+            <div class="flex border-b border-brandBg bg-brandBg text-xs font-bold uppercase tracking-wider text-textMuted">
+                <button id="tab-chats" class="flex-1 py-3 text-center active-tab transition">Чаты</button>
+                <button id="tab-friends" class="flex-1 py-3 text-center transition">Друзья</button>
+                <button id="tab-search" class="flex-1 py-3 text-center transition">Поиск</button>
+            </div>
+
+            <!-- Контент вкладок -->
+            <div class="flex-1 overflow-y-auto p-2" id="sidebar-content">
+                <!-- Сюда динамически рендерятся списки -->
+                <div id="list-container" class="flex flex-col gap-1"></div>
+            </div>
+        </div>
+
+        <!-- Основная область чата -->
+        <div class="flex-1 bg-chatBg flex flex-col relative" id="chat-window">
+            
+            <!-- Заглушка, когда чат не выбран -->
+            <div id="chat-empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-textMuted z-10 bg-chatBg">
+                <i class="fa-solid fa-comments text-7xl mb-4 text-gray-700"></i>
+                <p class="text-lg font-medium">Выберите собеседника или группу из списка</p>
+                <p class="text-xs text-gray-600 mt-1">MChat v1.0.0 Realtime Protocol</p>
+            </div>
+
+            <!-- Верхняя панель активного чата -->
+            <div class="h-16 bg-chatBg border-b border-brandBg flex justify-between items-center px-6 shadow-sm z-20">
+                <div class="flex items-center gap-3">
+                    <img id="active-chat-avatar" class="w-10 h-10 rounded-full object-cover bg-gray-600">
                     <div>
-                        <div id="my-name" class="font-bold text-white text-sm"></div>
-                        <div id="my-username" class="text-xs text-gray-400"></div>
+                        <div id="active-chat-title" class="font-bold text-white text-sm">...</div>
+                        <div id="active-chat-status" class="text-xs text-textMuted">...</div>
                     </div>
                 </div>
-                <button id="btn-logout" class="text-gray-400 hover:text-red-500"><i class="fa-solid fa-sign-out-alt"></i></button>
-            </div>
-
-            <!-- Search -->
-            <div class="p-3">
-                <div class="relative">
-                    <input type="text" id="search-input" class="w-full bg-discord text-sm text-white p-2 pl-8 rounded focus:outline-none" placeholder="Поиск по @username...">
-                    <i class="fa-solid fa-search absolute left-2.5 top-2.5 text-gray-400"></i>
+                <!-- Закрепленное сообщение сверху -->
+                <div id="pinned-message-bar" class="hidden flex-1 max-w-md mx-4 bg-brandBg px-3 py-1.5 rounded border-l-2 border-accentBtn flex justify-between items-center text-xs">
+                    <div class="truncate mr-2 text-textMain">
+                        <span class="font-bold text-accentBtn"><i class="fa-solid fa-thumbtack mr-1"></i> Закреплено:</span>
+                        <span id="pinned-text">...</span>
+                    </div>
+                    <button id="btn-jump-pinned" class="text-textMuted hover:text-white font-bold whitespace-nowrap">Просмотреть</button>
+                </div>
+                <div id="active-chat-actions" class="text-textMuted flex gap-3">
+                    <!-- Будет наполняться кнопками управления группой при необходимости -->
                 </div>
             </div>
 
-            <!-- Search Results -->
-            <div id="search-results" class="hide flex-1 overflow-y-auto p-2"></div>
+            <!-- Область отображения сообщений -->
+            <div id="messages-area" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-chatBg"></div>
 
-            <!-- Chats List -->
-            <div id="chats-list" class="flex-1 overflow-y-auto p-2"></div>
-        </div>
-
-        <!-- Chat Area -->
-        <div class="flex-1 flex flex-col bg-discord relative" id="chat-area">
-            <!-- Placeholder -->
-            <div id="chat-placeholder" class="flex-1 flex items-center justify-center flex-col text-gray-500">
-                <i class="fa-solid fa-messages text-6xl mb-4"></i>
-                <h2 class="text-xl">Выберите чат для общения</h2>
+            <!-- Индикатор "Печатает..." -->
+            <div id="typing-indicator-bar" class="px-6 py-1 text-xs text-textMuted italic hidden bg-chatBg">
+                <span id="typing-text">Кто-то печатает...</span>
             </div>
 
-            <!-- Active Chat -->
-            <div id="active-chat" class="hide flex-1 flex flex-col h-full w-full">
-                <!-- Chat Header -->
-                <div class="h-16 border-b border-discordDarker flex items-center px-6 shadow-sm bg-discord flex-shrink-0">
-                    <img id="current-chat-avatar" src="" class="w-10 h-10 rounded-full mr-3 object-cover">
-                    <div class="flex-1">
-                        <div id="current-chat-name" class="font-bold text-white"></div>
-                        <div id="current-chat-status" class="text-xs text-gray-400"></div>
-                    </div>
+            <!-- Предпросмотр ответа на сообщение -->
+            <div id="reply-preview-bar" class="px-6 py-2 bg-brandBg border-t border-brandBg hidden flex justify-between items-center text-xs text-textMain">
+                <div class="truncate">
+                    <i class="fa-solid fa-reply mr-2 text-accentBtn"></i>Ответ пользователю <span id="reply-user-name" class="font-bold"></span>: 
+                    <span id="reply-msg-text" class="italic text-textMuted ml-1"></span>
                 </div>
+                <button id="btn-cancel-reply" class="text-textMuted hover:text-red-400"><i class="fa-solid fa-xmark text-sm"></i></button>
+            </div>
 
-                <!-- Messages -->
-                <div id="messages-container" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4"></div>
+            <!-- Предпросмотр медиафайла перед отправкой (Drag and Drop / Выбор) -->
+            <div id="file-preview-bar" class="px-6 py-2 bg-brandBg border-t border-brandBg hidden flex justify-between items-center text-xs text-textMain">
+                <div class="flex items-center gap-2 truncate">
+                    <i class="fa-solid fa-file-arrow-up text-green-500 text-lg"></i>
+                    <span id="preview-file-name" class="font-bold truncate">file.dat</span>
+                    <span id="preview-file-size" class="text-textMuted">(0 KB)</span>
+                </div>
+                <button id="btn-cancel-file" class="text-textMuted hover:text-red-400"><i class="fa-solid fa-xmark text-sm"></i></button>
+            </div>
 
-                <!-- Input Area -->
-                <div class="p-4 bg-discordDark flex-shrink-0">
-                    <div class="bg-discordDarker rounded-lg flex items-center p-2 relative">
-                        <input type="file" id="file-upload" class="hide" accept="image/*, .pdf, .doc, .zip">
-                        <button id="btn-attach" class="text-gray-400 hover:text-white px-3"><i class="fa-solid fa-paperclip"></i></button>
-                        <input type="text" id="message-input" class="flex-1 bg-transparent text-white focus:outline-none px-2" placeholder="Написать сообщение...">
-                        <button id="btn-send" class="text-blue-500 hover:text-blue-400 px-3"><i class="fa-solid fa-paper-plane"></i></button>
+            <!-- Панель ввода сообщений -->
+            <div class="p-4 bg-chatBg border-t border-brandBg flex flex-col gap-2">
+                <div class="bg-brandBg rounded-lg flex items-center p-2.5 relative">
+                    <!-- Скрытые инпуты загрузки -->
+                    <input type="file" id="input-file-select" class="hidden">
+                    
+                    <button id="btn-trigger-upload" class="text-textMuted hover:text-white px-2.5 transition" title="Прикрепить файл"><i class="fa-solid fa-paperclip text-lg"></i></button>
+                    <input type="text" id="input-message" class="flex-1 bg-transparent text-white focus:outline-none px-2 text-sm" placeholder="Написать сообщение...">
+                    
+                    <!-- Кнопка эмодзи -->
+                    <button id="btn-emoji" class="text-textMuted hover:text-white px-2.5 transition" title="Эмодзи"><i class="fa-regular fa-face-smile text-lg"></i></button>
+                    <!-- Панель эмодзи -->
+                    <div id="emoji-picker" class="absolute bottom-14 right-12 bg-sidebarBg border border-brandBg p-2 rounded shadow-xl grid grid-cols-6 gap-1 hidden z-30">
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">😀</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">😂</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🥰</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">👍</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🔥</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🎉</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">👀</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">💯</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">🚀</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">💔</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">💩</button>
+                        <button class="emoji-item p-1 text-lg hover:bg-gray-700 rounded">😿</button>
                     </div>
-                    <div id="upload-progress" class="hide w-full bg-gray-700 rounded-full h-1.5 mt-2">
-                        <div id="upload-bar" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
-                    </div>
+
+                    <button id="btn-send-message" class="text-accentBtn hover:text-white px-2.5 transition" title="Отправить"><i class="fa-solid fa-paper-plane text-lg"></i></button>
+                </div>
+                <!-- Прогресс бар отправки файлов -->
+                <div id="upload-progress-container" class="w-full bg-brandBg h-1.5 rounded overflow-hidden hidden">
+                    <div id="upload-progress-bar" class="bg-accentBtn h-full transition-all duration-150" style="width: 0%"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Application Logic -->
+    <!-- Модальное окно: Профиль текущего пользователя -->
+    <div id="modal-profile" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-white">Редактирование профиля</h3>
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="flex flex-col items-center gap-4 mb-4">
+                <div class="relative group cursor-pointer" id="avatar-upload-trigger">
+                    <img id="modal-profile-avatar" class="w-24 h-24 rounded-full object-cover border-4 border-brandBg bg-gray-700">
+                    <div class="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                        <i class="fa-solid fa-camera text-white text-xl"></i>
+                    </div>
+                    <input type="file" id="input-avatar-file" class="hidden" accept="image/*">
+                </div>
+                <div class="text-center w-full">
+                    <p id="modal-profile-email" class="text-xs text-textMuted"></p>
+                    <p id="modal-profile-joined" class="text-[10px] text-gray-500 mt-0.5"></p>
+                </div>
+            </div>
+            <div class="flex flex-col gap-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Отображаемое имя</label>
+                    <input type="text" id="modal-profile-name" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Уникальный никнейм (@)</label>
+                    <input type="text" id="modal-profile-username" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn">
+                    <div id="modal-username-status" class="text-xs mt-1 font-semibold hidden"></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">О себе</label>
+                    <textarea id="modal-profile-bio" rows="2" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn resize-none"></textarea>
+                </div>
+                <button id="btn-save-profile" class="w-full bg-accentBtn hover:bg-accentHover text-white font-bold py-2.5 rounded transition">Сохранить изменения</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Просмотр чужого профиля -->
+    <div id="modal-user-view" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+            <div class="flex justify-end">
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex flex-col items-center text-center gap-3">
+                <img id="view-user-avatar" class="w-24 h-24 rounded-full object-cover border-4 border-brandBg bg-gray-700">
+                <div>
+                    <h4 id="view-user-name" class="text-xl font-bold text-white">...</h4>
+                    <p id="view-user-username" class="text-xs text-accentBtn">@...</p>
+                    <p id="view-user-status" class="text-[11px] text-textMuted mt-1">...</p>
+                </div>
+                <p id="view-user-bio" class="text-sm text-textMain italic px-4 py-2 bg-brandBg rounded w-full border border-gray-800 min-h-12 flex items-center justify-center">...</p>
+                <div id="view-user-actions" class="w-full flex flex-col gap-2 mt-2">
+                    <!-- Кнопки управления дружбой: Добавить / Удалить / Принять -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Создание / Управление групповым чатом -->
+    <div id="modal-group" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-sidebarBg rounded-lg p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modal-group-title" class="text-xl font-bold text-white">Создание группы</h3>
+                <button class="modal-close text-textMuted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex flex-col gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="relative group cursor-pointer" id="group-avatar-upload-trigger">
+                        <img id="modal-group-avatar" src="https://ui-avatars.com/api/?name=Group&background=4f545c&color=fff" class="w-16 h-16 rounded-full object-cover bg-gray-700">
+                        <div class="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                            <i class="fa-solid fa-camera text-white text-xs"></i>
+                        </div>
+                        <input type="file" id="input-group-avatar-file" class="hidden" accept="image/*">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold uppercase text-textMain mb-1">Название группы</label>
+                        <input type="text" id="modal-group-name" class="w-full bg-brandBg p-2.5 rounded border border-gray-700 text-white focus:outline-none focus:border-accentBtn" placeholder="Например: Разработчики">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Участники (Выберите друзей)</label>
+                    <div id="modal-group-friends-list" class="max-h-40 overflow-y-auto border border-gray-700 rounded bg-brandBg p-2 flex flex-col gap-1">
+                        <!-- Сюда подгрузятся друзья с чекбоксами -->
+                    </div>
+                </div>
+                <div id="modal-group-members-management" class="hidden">
+                    <label class="block text-xs font-bold uppercase text-textMain mb-1">Управление участниками группы</label>
+                    <div id="modal-group-current-members" class="max-h-40 overflow-y-auto border border-gray-700 rounded bg-brandBg p-2 flex flex-col gap-1">
+                        <!-- Для админа - список участников с кнопкой КИК -->
+                    </div>
+                </div>
+                <button id="btn-submit-group" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded transition">Создать группу</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Просмотр полноразмерного изображения -->
+    <div id="modal-image-view" class="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center hidden" onclick="this.classList.add('hidden')">
+        <img id="full-size-image-element" class="max-w-full max-h-full p-4 rounded-lg object-contain">
+    </div>
+
+    <!-- Модульная логика приложения -->
     <script type="module">
         import { initializeApp } from "firebase/app";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-        import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp, orderBy, updateDoc } from "firebase/firestore";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, limit } from "firebase/firestore";
         import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
-        // ==========================================
-        // ВСТАВЬТЕ ВАШ FIREBASE CONFIG СЮДА
-        // ==========================================
+        // Заданная конфигурация Firebase проекта Airgram
         const firebaseConfig = {
-            apiKey: "AIzaSyYourApiKeyHere",
-            authDomain: "your-project.firebaseapp.com",
-            projectId: "your-project",
-            storageBucket: "your-project.appspot.com",
-            messagingSenderId: "123456789",
-            appId: "1:123456789:web:abcdef"
+          apiKey: "AIzaSyCavGRCy4hsLr7_8Onj-TM21xaAd_Vkh2c",
+          authDomain: "airgram-66933.firebaseapp.com",
+          projectId: "airgram-66933",
+          storageBucket: "airgram-66933.firebasestorage.app",
+          messagingSenderId: "876946365615",
+          appId: "1:876946365615:web:34e5d21fc36d4aa6cf085a",
+          measurementId: "G-MX6EVE8YSC"
         };
 
+        // Инициализация сервисов
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const storage = getStorage(app);
+        const provider = new GoogleAuthProvider();
 
-        // Global State
-        let currentUserData = null;
-        let currentChatId = null;
-        let currentChatUser = null;
-        let unsubscribeMessages = null;
-        let unsubscribeChats = null;
-        let unsubscribeUserStatus = null;
+        // Системный стейт
+        let me = null; 
+        let activeTab = 'chats'; 
+        let activeChat = null; // { id, type, data }
+        let selectedFile = null;
+        let replyingToMessage = null;
+        let contextedMessage = null;
+        let typingTimeout = null;
 
-        // UI Helpers
-        const el = (id) => document.getElementById(id);
-        const show = (e) => e.classList.remove('hide');
-        const hide = (e) => e.classList.add('hide');
+        // Кэш слушателей realtime для предотвращения утечек
+        const activeListeners = {
+            sidebar: null,
+            messages: null,
+            typing: null,
+            pinned: null,
+            chatMeta: null
+        };
 
-        function showToast(message) {
+        // Вспомогательные хелперы DOM
+        const el = id => document.getElementById(id);
+        const show = element => element.classList.remove('hidden');
+        const hide = element => element.classList.add('hidden');
+
+        // Генерация чистого звука без внешних файлов (Web Audio API)
+        function playNotificationSound(type = 'msg') {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                if (type === 'msg') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Ре5
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.12);
+                } else if (type === 'meow') {
+                    // Специальный пасхальный звук для 😿
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(880, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.15);
+                    osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.3);
+                    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                }
+            } catch (e) { console.warn("Аудио контекст заблокирован браузером"); }
+        }
+
+        // Система тост-уведомлений
+        function toast(text, isError = false) {
             const container = el('toast-container');
-            if (!container) return;
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = message;
-            container.appendChild(toast);
-            setTimeout(() => toast.style.opacity = '1', 10);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-            
-            if (typeof Notification !== 'undefined' && Notification.permission === "granted") {
-                try { new Notification("MChat", { body: message }); } catch(e) {}
+            const item = document.createElement('div');
+            item.className = `p-3.5 rounded shadow-xl text-sm font-semibold pointer-events-auto text-white flex items-center gap-2 border transition duration-300 ${isError ? 'bg-red-600 border-red-700' : 'bg-accentBtn border-brandBg'}`;
+            item.innerHTML = `<i class="fa-solid ${isError ? 'fa-circle-exclamation' : 'fa-circle-info'}"></i> <span>${text}</span>`;
+            container.appendChild(item);
+            setTimeout(() => { item.style.opacity = '0'; setTimeout(() => item.remove(), 300); }, 3500);
+
+            if (!isError && Notification.permission === "granted") {
+                new Notification("MChat", { body: text });
             }
         }
 
-        // --- AUTH & PRESENCE ---
-        const provider = new GoogleAuthProvider();
-
-        el('btn-login').addEventListener('click', async () => {
-            try {
-                await signInWithPopup(auth, provider);
-            } catch (error) {
-                console.error("Login error:", error);
-                alert("Ошибка входа: " + error.message);
-            }
+        // Авторизация и отслеживание сессии
+        el('btn-google-login').addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch(err => toast(err.message, true));
         });
 
         el('btn-logout').addEventListener('click', async () => {
-            try {
-                if (auth.currentUser) {
-                    await updateDoc(doc(db, "users", auth.currentUser.uid), { isOnline: false, lastSeen: serverTimestamp() });
-                }
-            } catch(e) { console.error(e); }
-            await signOut(auth);
+            if (auth.currentUser) {
+                await updateDoc(doc(db, "users", auth.currentUser.uid), { isOnline: false, lastSeen: serverTimestamp() });
+            }
+            signOut(auth).then(() => location.reload());
         });
 
         onAuthStateChanged(auth, async (user) => {
-            try {
-                if (user) {
-                    hide(el('login-screen'));
-                    if (typeof Notification !== 'undefined' && Notification.requestPermission) {
-                        Notification.requestPermission().catch(err => console.log("Notifications blocked:", err));
-                    }
-                    await checkAndLoadProfile(user);
-                } else {
-                    show(el('login-screen'));
-                    hide(el('main-app'));
-                    hide(el('setup-modal'));
-                    currentUserData = null;
-                }
-            } catch (globalError) {
-                console.error("Auth state error:", globalError);
-                alert("Критическая ошибка инициализации: " + globalError.message);
-                show(el('login-screen'));
+            if (user) {
+                hide(el('screen-auth'));
+                Notification.requestPermission();
+                await synchronizeUserAccount(user);
+            } else {
+                show(el('screen-auth'));
+                hide(el('screen-app'));
             }
         });
 
-        window.addEventListener('beforeunload', () => {
-            if (auth.currentUser && currentUserData) {
-                updateDoc(doc(db, "users", auth.currentUser.uid), { isOnline: false, lastSeen: serverTimestamp() });
-            }
-        });
+        async function synchronizeUserAccount(user) {
+            const userRef = doc(db, "users", user.uid);
+            const snap = await getDoc(userRef);
 
-        async function checkAndLoadProfile(user) {
-            try {
-                const userRef = doc(db, "users", user.uid);
-                const userSnap = await getDoc(userRef);
-
-                if (userSnap.exists()) {
-                    currentUserData = userSnap.data();
-                    await updateDoc(userRef, { isOnline: true });
-                    initAppUI();
-                } else {
-                    show(el('setup-modal'));
-                }
-            } catch (dbError) {
-                console.error("Firestore read error:", dbError);
-                alert("Ошибка доступа к Базе Данных!\n\nПроверьте, настроили ли вы Правила Безопасности (Security Rules) в панели управления Firebase.\n\nДетали: " + dbError.message);
-                show(el('login-screen'));
+            if (snap.exists()) {
+                me = snap.data();
+                await updateDoc(userRef, { isOnline: true, lastSeen: serverTimestamp() });
+                startApplication();
+            } else {
+                show(el('screen-setup'));
+                setupUsernameValidationLogic();
             }
         }
 
-        // --- SETUP PROFILE ---
-        el('btn-save-setup').addEventListener('click', async () => {
-            const username = el('setup-username').value.trim().toLowerCase();
-            const errorEl = el('setup-error');
-            
-            if (username.length < 3) {
-                errorEl.textContent = "Имя должно быть от 3 символов"; show(errorEl); return;
-            }
-            if (/[^a-z0-9_]/.test(username)) {
-                errorEl.textContent = "Только латинские буквы, цифры и _"; show(errorEl); return;
-            }
+        // Валидация уникальности никнейма в реальном времени
+        function setupUsernameValidationLogic() {
+            const input = el('input-setup-username');
+            const status = el('setup-username-status');
+            const btn = el('btn-complete-setup');
 
-            try {
-                const q = query(collection(db, "users"), where("username", "==", username));
-                const querySnapshot = await getDocs(q);
-                
-                if (!querySnapshot.empty) {
-                    errorEl.textContent = "Это имя уже занято"; show(errorEl); return;
+            let timer;
+            input.addEventListener('input', () => {
+                clearTimeout(timer);
+                hide(status);
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+                const val = input.value.trim().toLowerCase();
+                if (val.length < 3) {
+                    status.textContent = "Минимум 3 символа"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                    return;
                 }
-
-                const user = auth.currentUser;
-                const newUserData = {
-                    uid: user.uid,
-                    email: user.email,
-                    displayName: user.displayName || username,
-                    photoURL: user.photoURL || 'https://ui-avatars.com/api/?name=' + username,
-                    username: username,
-                    bio: 'Привет! Я использую MChat.',
-                    createdAt: serverTimestamp(),
-                    isOnline: true,
-                    lastSeen: serverTimestamp()
-                };
-
-                await setDoc(doc(db, "users", user.uid), newUserData);
-                currentUserData = newUserData;
-                hide(el('setup-modal'));
-                initAppUI();
-            } catch(err) {
-                errorEl.textContent = "Ошибка сохранения: " + err.message;
-                show(errorEl);
-            }
-        });
-
-        // --- MAIN APP INIT ---
-        function initAppUI() {
-            show(el('main-app'));
-            el('my-avatar').src = currentUserData.photoURL;
-            el('my-name').textContent = currentUserData.displayName;
-            el('my-username').textContent = "@" + currentUserData.username;
-            loadChatsList();
-        }
-
-        // --- SEARCH USERS ---
-        el('search-input').addEventListener('input', async (e) => {
-            const val = e.target.value.trim().toLowerCase().replace('@', '');
-            const resContainer = el('search-results');
-            const chatsList = el('chats-list');
-            
-            if (!val) {
-                hide(resContainer); show(chatsList); return;
-            }
-
-            hide(chatsList); show(resContainer);
-            resContainer.innerHTML = '<div class="text-gray-500 text-center text-sm p-4">Поиск...</div>';
-
-            try {
-                const q = query(collection(db, "users"), where("username", ">=", val), where("username", "<=", val + '\uf8ff'));
-                const snaps = await getDocs(q);
-                
-                resContainer.innerHTML = '';
-                if(snaps.empty) {
-                    resContainer.innerHTML = '<div class="text-gray-500 text-center text-sm p-4">Ничего не найдено</div>';
+                if (/[^a-z0-9_]/.test(val)) {
+                    status.textContent = "Только a-z, 0-9 и подчёркивание"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
                     return;
                 }
 
-                snaps.forEach(docSnap => {
-                    const u = docSnap.data();
-                    if (u.uid === currentUserData.uid) return;
-                    
-                    const div = document.createElement('div');
-                    div.className = 'flex items-center p-2 hover:bg-discordDarker rounded cursor-pointer transition mb-1';
-                    div.innerHTML = `
-                        <img src="${u.photoURL}" class="w-10 h-10 rounded-full mr-3 object-cover">
-                        <div><div class="text-white text-sm font-bold">${u.displayName}</div><div class="text-gray-400 text-xs">@${u.username}</div></div>
-                    `;
-                    div.onclick = () => openChatWith(u);
-                    resContainer.appendChild(div);
-                });
-            } catch(err) {
-                resContainer.innerHTML = '<div class="text-red-500 text-center text-xs p-4">Ошибка поиска</div>';
-            }
-        });
-
-        // --- CHAT LOGIC ---
-        async function openChatWith(otherUser) {
-            try {
-                const q = query(collection(db, "chats"), where("participants", "array-contains", currentUserData.uid));
-                const chatsSnap = await getDocs(q);
-                
-                let chatId = null;
-                chatsSnap.forEach(docSnap => {
-                    const data = docSnap.data();
-                    if (data.type === 'direct' && data.participants.includes(otherUser.uid)) {
-                        chatId = docSnap.id;
+                timer = setTimeout(async () => {
+                    const q = query(collection(db, "users"), where("username", "==", val));
+                    const res = await getDocs(q);
+                    if (!res.empty) {
+                        status.textContent = "Этот никнейм уже занят"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                    } else {
+                        status.textContent = "Никнейм свободен!"; status.className = "text-green-400 text-xs mt-1 font-semibold"; show(status);
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
                     }
-                });
-
-                if (!chatId) {
-                    const newChatRef = await addDoc(collection(db, "chats"), {
-                        type: 'direct',
-                        participants: [currentUserData.uid, otherUser.uid],
-                        updatedAt: serverTimestamp(),
-                        lastMessage: ''
-                    });
-                    chatId = newChatRef.id;
-                }
-
-                el('search-input').value = '';
-                hide(el('search-results'));
-                show(el('chats-list'));
-
-                loadChat(chatId, otherUser);
-            } catch(e) {
-                alert("Не удалось открыть чат: " + e.message);
-            }
-        }
-
-        function loadChat(chatId, otherUser) {
-            currentChatId = chatId;
-            currentChatUser = otherUser;
-            
-            hide(el('chat-placeholder'));
-            show(el('active-chat'));
-            
-            el('current-chat-name').textContent = otherUser.displayName;
-            el('current-chat-avatar').src = otherUser.photoURL;
-            el('current-chat-status').textContent = otherUser.isOnline ? 'Online' : 'Offline';
-
-            if (unsubscribeUserStatus) unsubscribeUserStatus();
-            unsubscribeUserStatus = onSnapshot(doc(db, "users", otherUser.uid), (docSnap) => {
-                const u = docSnap.data();
-                if(u) el('current-chat-status').textContent = u.isOnline ? 'Online' : 'В сети: ' + (u.lastSeen ? new Date(u.lastSeen.toDate()).toLocaleString() : 'недавно');
-            });
-
-            if (unsubscribeMessages) unsubscribeMessages();
-
-            const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
-            unsubscribeMessages = onSnapshot(q, (snapshot) => {
-                const container = el('messages-container');
-                container.innerHTML = '';
-                snapshot.forEach(docSnap => {
-                    renderMessage(docSnap.data());
-                });
-                container.scrollTop = container.scrollHeight;
+                }, 400);
             });
         }
 
-        function renderMessage(msg) {
-            const isMe = msg.senderId === currentUserData.uid;
-            const div = document.createElement('div');
-            div.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'}`;
+        el('btn-complete-setup').addEventListener('click', async () => {
+            const user = auth.currentUser;
+            const username = el('input-setup-username').value.trim().toLowerCase();
             
-            let contentHTML = '';
-            if (msg.type === 'text') {
-                contentHTML = `<div class="p-3 rounded-lg ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-discordDarker text-white rounded-bl-none'} message-bubble">${msg.text}</div>`;
-            } else if (msg.type === 'image') {
-                contentHTML = `<img src="${msg.fileUrl}" class="rounded-lg max-w-xs max-h-64 object-cover cursor-pointer border border-gray-600">`;
-            } else if (msg.type === 'file') {
-                contentHTML = `<a href="${msg.fileUrl}" target="_blank" class="p-3 rounded-lg bg-gray-700 text-blue-400 underline flex items-center gap-2 message-bubble"><i class="fa-solid fa-file"></i> Документ</a>`;
-            }
+            const payload = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName || username,
+                photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${username}&background=5865f2&color=fff`,
+                username: username,
+                bio: "Использую MChat!",
+                createdAt: serverTimestamp(),
+                isOnline: true,
+                lastSeen: serverTimestamp()
+            };
 
-            div.innerHTML = `
-                <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[70%]">
-                    ${!isMe ? `<span class="text-xs text-gray-400 mb-1 ml-1">${currentChatUser.displayName}</span>` : ''}
-                    ${contentHTML}
-                    <span class="text-[10px] text-gray-500 mt-1">${msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([],{hour: '2-digit', minute:'2-digit'}) : '...'}</span>
-                </div>
-            `;
-            el('messages-container').appendChild(div);
+            await setDoc(doc(db, "users", user.uid), payload);
+            me = payload;
+            hide(el('screen-setup'));
+            startApplication();
+        });
+
+        // Запуск интерфейса
+        function startApplication() {
+            show(el('screen-app'));
+            el('ui-my-avatar').src = me.photoURL;
+            el('ui-my-name').textContent = me.displayName;
+            el('ui-my-username').textContent = `@${me.username}`;
+
+            setupTabRouting();
+            renderSidebarData();
+            setupGlobalEventListeners();
         }
 
-        async function sendMessage(text, type = 'text', fileUrl = null) {
-            if (!text && !fileUrl) return;
-            if (!currentChatId) return;
-
-            try {
-                const msgData = {
-                    senderId: currentUserData.uid,
-                    text: text,
-                    type: type,
-                    fileUrl: fileUrl,
-                    createdAt: serverTimestamp()
-                };
-
-                await addDoc(collection(db, "chats", currentChatId, "messages"), msgData);
-                await updateDoc(doc(db, "chats", currentChatId), {
-                    lastMessage: type === 'image' ? '📸 Изображение' : type === 'file' ? '📂 Файл' : text,
-                    updatedAt: serverTimestamp()
+        // Маршрутизация вкладок левого сайдбара
+        function setupTabRouting() {
+            const tabs = ['chats', 'friends', 'search'];
+            tabs.forEach(t => {
+                el(`tab-${t}`).addEventListener('click', () => {
+                    tabs.forEach(x => el(`tab-${x}`).classList.remove('active-tab'));
+                    el(`tab-${t}`).classList.add('active-tab');
+                    activeTab = t;
+                    renderSidebarData();
                 });
-
-                el('message-input').value = '';
-            } catch(e) {
-                showToast("Ошибка отправки: " + e.message);
-            }
+            });
         }
 
-        el('btn-send').addEventListener('click', () => sendMessage(el('message-input').value.trim()));
-        el('message-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage(e.target.value.trim());
-        });
+        // Рендеринг данных сайдбара в зависимости от вкладки
+        function renderSidebarData() {
+            const container = el('list-container');
+            container.innerHTML = '';
 
-        // --- FILE UPLOAD ---
-        el('btn-attach').addEventListener('click', () => el('file-upload').click());
-        
-        el('file-upload').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file || !currentChatId) return;
+            if (activeListeners.sidebar) { activeListeners.sidebar(); activeListeners.sidebar = null; }
 
-            const isImage = file.type.startsWith('image/');
-            const type = isImage ? 'image' : 'file';
-
-            try {
-                const storageRef = ref(storage, `chats/${currentChatId}/${Date.now()}_${file.name}`);
-                const uploadTask = uploadBytesResumable(storageRef, file);
-
-                show(el('upload-progress'));
-                
-                uploadTask.on('state_changed', 
-                    (snapshot) => {
-                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        el('upload-bar').style.width = progress + '%';
-                    }, 
-                    (error) => {
-                        console.error("Upload error", error);
-                        hide(el('upload-progress'));
-                        showToast("Ошибка загрузки: " + error.message);
-                    }, 
-                    async () => {
-                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                        hide(el('upload-progress'));
-                        el('upload-bar').style.width = '0%';
-                        sendMessage('', type, downloadURL);
-                    }
-                );
-            } catch(err) {
-                showToast("Ошибка Хранилища: " + err.message);
-            }
-        });
-
-        // --- CHATS LIST REALTIME ---
-        function loadChatsList() {
-            if (unsubscribeChats) unsubscribeChats();
-
-            try {
-                const q = query(
-                    collection(db, "chats"), 
-                    where("participants", "array-contains", currentUserData.uid),
-                    orderBy("updatedAt", "desc")
-                );
-
-                unsubscribeChats = onSnapshot(q, (snapshot) => {
-                    const container = el('chats-list');
+            if (activeTab === 'chats') {
+                const q = query(collection(db, "chats"), where("participants", "array-contains", me.uid), orderBy("updatedAt", "desc"));
+                activeListeners.sidebar = onSnapshot(q, async (snap) => {
                     container.innerHTML = '';
-
-                    snapshot.forEach((docIdx) => {
-                        const data = docIdx.data();
-                        const otherUserId = data.participants.find(id => id !== currentUserData.uid);
+                    if (snap.empty) {
+                        container.innerHTML = `<div class="text-textMuted text-xs text-center mt-8">Нет активных чатов</div>`;
+                        return;
+                    }
+                    for (const chatDoc of snap.docs) {
+                        const chatData = chatDoc.data();
+                        const item = document.createElement('div');
+                        item.className = `flex items-center gap-3 p-2.5 rounded cursor-pointer transition hover:bg-brandBg ${activeChat?.id === chatDoc.id ? 'bg-brandBg' : ''}`;
                         
-                        if (!otherUserId) return;
+                        let title = chatData.name || "Групповой чат";
+                        let avatar = chatData.photoURL || "https://ui-avatars.com/api/?name=Group&background=4f545c";
+                        let statusMarker = '';
 
-                        getDoc(doc(db, "users", otherUserId)).then(userSnap => {
-                            if(userSnap.exists()){
-                                const u = userSnap.data();
+                        if (chatData.type === 'direct') {
+                            const companionId = chatData.participants.find(p => p !== me.uid);
+                            const companionSnap = await getDoc(doc(db, "users", companionId));
+                            if (companionSnap.exists()) {
+                                const comp = companionSnap.data();
+                                title = comp.displayName;
+                                avatar = comp.photoURL;
+                                statusMarker = `<div class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-sidebarBg ${comp.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>`;
+                            }
+                        }
+
+                        item.innerHTML = `
+                            <div class="relative flex-shrink-0">
+                                <img src="${avatar}" class="w-11 h-11 rounded-full object-cover bg-gray-700">
+                                ${statusMarker}
+                            </div>
+                            <div class="flex-1 overflow-hidden">
+                                <div class="flex justify-between items-center mb-0.5">
+                                    <span class="text-sm font-bold text-white truncate">${title}</span>
+                                    <span class="text-[10px] text-textMuted">${chatData.updatedAt ? new Date(chatData.updatedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
+                                </div>
+                                <p class="text-xs text-textMuted truncate">${chatData.lastMessage || 'Сообщений нет'}</p>
+                            </div>
+                        `;
+                        item.onclick = () => selectActiveChat(chatDoc.id, chatData.type, chatData, title, avatar);
+                        container.appendChild(item);
+                    }
+                }, () => {});
+
+            } else if (activeTab === 'friends') {
+                // Запрос друзей и входящих заявок
+                const qReq = query(collection(db, "friend_requests"), where("toId", "==", me.uid), where("status", "==", "pending"));
+                activeListeners.sidebar = onSnapshot(qReq, async (snapReq) => {
+                    container.innerHTML = '';
+                    
+                    // Сначала рендерим заявки
+                    if (!snapReq.empty) {
+                        const header = document.createElement('div');
+                        header.className = "text-[10px] uppercase font-bold text-accentBtn px-2 mb-1 mt-2";
+                        header.textContent = "Заявки в друзья";
+                        container.appendChild(header);
+
+                        for (const reqDoc of snapReq.docs) {
+                            const req = reqDoc.data();
+                            const uSnap = await getDoc(doc(db, "users", req.fromId));
+                            if (uSnap.exists()) {
+                                const u = uSnap.data();
                                 const div = document.createElement('div');
-                                div.className = `flex items-center p-3 hover:bg-discordDarker rounded cursor-pointer transition mb-1 ${currentChatId === docIdx.id ? 'bg-discordDarker' : ''}`;
+                                div.className = "bg-brandBg p-2 rounded flex items-center justify-between mb-1";
                                 div.innerHTML = `
-                                    <div class="relative flex-shrink-0">
-                                        <img src="${u.photoURL}" class="w-12 h-12 rounded-full object-cover">
-                                        <div class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-discordDark ${u.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>
+                                    <div class="flex items-center gap-2 truncate">
+                                        <img src="${u.photoURL}" class="w-8 h-8 rounded-full object-cover">
+                                        <div class="truncate text-xs"><p class="font-bold text-white truncate">${u.displayName}</p><p class="text-textMuted text-[10px]">@${u.username}</p></div>
                                     </div>
-                                    <div class="ml-3 flex-1 overflow-hidden">
-                                        <div class="flex justify-between items-center">
-                                            <span class="text-white font-bold truncate">${u.displayName}</span>
-                                        </div>
-                                        <div class="text-gray-400 text-sm truncate">${data.lastMessage || 'Новый чат'}</div>
+                                    <div class="flex gap-1 flex-shrink-0">
+                                        <button class="bg-green-600 hover:bg-green-700 p-1 px-2 rounded text-[10px] font-bold text-white" id="accept-${reqDoc.id}"><i class="fa-solid fa-check"></i></button>
+                                        <button class="bg-red-600 hover:bg-red-700 p-1 px-2 rounded text-[10px] font-bold text-white" id="reject-${reqDoc.id}"><i class="fa-solid fa-xmark"></i></button>
                                     </div>
                                 `;
-                                div.onclick = () => loadChat(docIdx.id, u);
                                 container.appendChild(div);
+
+                                el(`accept-${reqDoc.id}`).onclick = async () => {
+                                    await updateDoc(doc(db, "friend_requests", reqDoc.id), { status: "accepted" });
+                                    await addDoc(collection(db, "friendships"), { user1: me.uid, user2: u.uid, createdAt: serverTimestamp() });
+                                    toast(`Вы подружились с ${u.displayName}`);
+                                    renderSidebarData();
+                                };
+                                el(`reject-${reqDoc.id}`).onclick = async () => {
+                                    await deleteDoc(doc(db, "friend_requests", reqDoc.id));
+                                    renderSidebarData();
+                                };
                             }
-                        }).catch(e => console.log(e));
+                        }
+                    }
+
+                    // Затем рендерим список друзей
+                    const headerF = document.createElement('div');
+                    headerF.className = "text-[10px] uppercase font-bold text-textMuted px-2 mb-1 mt-4";
+                    headerF.textContent = "Все друзья";
+                    container.appendChild(headerF);
+
+                    const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid));
+                    const qF2 = query(collection(db, "friendships"), where("user2", "==", me.uid));
+                    
+                    const [res1, res2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
+                    const friendIds = [];
+                    res1.forEach(d => friendIds.push(d.data().user2));
+                    res2.forEach(d => friendIds.push(d.data().user1));
+
+                    if (friendIds.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = "text-textMuted text-xs text-center mt-4";
+                        empty.textContent = "Список друзей пуст";
+                        container.appendChild(empty);
+                        return;
+                    }
+
+                    for (const fId of friendIds) {
+                        const uSnap = await getDoc(doc(db, "users", fId));
+                        if (uSnap.exists()) {
+                            const u = uSnap.data();
+                            const div = document.createElement('div');
+                            div.className = "flex items-center justify-between p-2 rounded hover:bg-brandBg cursor-pointer transition";
+                            div.innerHTML = `
+                                <div class="flex items-center gap-2.5 truncate" id="view-friend-${u.uid}">
+                                    <div class="relative flex-shrink-0">
+                                        <img src="${u.photoURL}" class="w-9 h-9 rounded-full object-cover">
+                                        <div class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-sidebarBg ${u.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>
+                                    </div>
+                                    <div class="truncate text-xs">
+                                        <p class="font-bold text-white truncate">${u.displayName}</p>
+                                        <p class="text-textMuted text-[10px]">@${u.username}</p>
+                                    </div>
+                                </div>
+                                <button class="text-textMuted hover:text-accentBtn p-2" id="msg-friend-${u.uid}"><i class="fa-solid fa-message"></i></button>
+                            `;
+                            container.appendChild(div);
+
+                            el(`view-friend-${u.uid}`).onclick = () => openUserProfileModal(u);
+                            el(`msg-friend-${u.uid}`).onclick = () => initOrOpenDirectChat(u);
+                        }
+                    }
+                });
+
+            } else if (activeTab === 'search') {
+                container.innerHTML = `
+                    <div class="p-1">
+                        <input type="text" id="sidebar-search-input" class="w-full bg-brandBg text-xs text-white p-2.5 rounded border border-gray-700 focus:outline-none focus:border-accentBtn" placeholder="Введите @никнейм...">
+                        <div id="search-results-sub" class="mt-3 flex flex-col gap-1"></div>
+                    </div>
+                `;
+
+                el('sidebar-search-input').addEventListener('input', async (e) => {
+                    const term = e.target.value.trim().toLowerCase().replace('@', '');
+                    const subContainer = el('search-results-sub');
+                    subContainer.innerHTML = '';
+                    if (!term) return;
+
+                    const q = query(collection(db, "users"), where("username", ">=", term), where("username", "<=", term + '\uf8ff'), limit(15));
+                    const snap = await getDocs(q);
+                    
+                    if (snap.empty) {
+                        subContainer.innerHTML = `<div class="text-textMuted text-xs text-center mt-4">Ничего не найдено</div>`;
+                        return;
+                    }
+
+                    snap.forEach(docSnap => {
+                        const u = docSnap.data();
+                        if (u.uid === me.uid) return;
+
+                        const div = document.createElement('div');
+                        div.className = "flex items-center justify-between p-2 rounded bg-brandBg hover:bg-gray-700 cursor-pointer transition";
+                        div.innerHTML = `
+                            <div class="flex items-center gap-2 truncate">
+                                <img src="${u.photoURL}" class="w-8 h-8 rounded-full object-cover">
+                                <div class="truncate text-xs"><p class="font-bold text-white truncate">${u.displayName}</p><p class="text-textMuted text-[10px]">@${u.username}</p></div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-textMuted text-xs pr-2"></i>
+                        `;
+                        div.onclick = () => openUserProfileModal(u);
+                        subContainer.appendChild(div);
                     });
                 });
-            } catch(e) {
-                console.error("Chats list listener error:", e);
             }
+        }
+
+        // Логика инициализации ЛС
+        async function initOrOpenDirectChat(otherUser) {
+            const q = query(collection(db, "chats"), where("type", "==", "direct"), where("participants", "array-contains", me.uid));
+            const snap = await getDocs(q);
+            let targetChatId = null;
+            let targetChatData = null;
+
+            snap.forEach(d => {
+                const data = d.data();
+                if (data.participants.includes(otherUser.uid)) {
+                    targetChatId = d.id;
+                    targetChatData = data;
+                }
+            });
+
+            if (!targetChatId) {
+                const newChat = {
+                    type: 'direct',
+                    participants: [me.uid, otherUser.uid],
+                    updatedAt: serverTimestamp(),
+                    lastMessage: '',
+                    pinnedMessageId: null
+                };
+                const docRef = await addDoc(collection(db, "chats"), newChat);
+                targetChatId = docRef.id;
+                targetChatData = newChat;
+            }
+
+            el('tab-chats').click();
+            selectActiveChat(targetChatId, 'direct', targetChatData, otherUser.displayName, otherUser.photoURL);
+        }
+
+        // Выбор активного чата
+        function selectActiveChat(chatId, type, data, computedTitle, computedAvatar) {
+            activeChat = { id: chatId, type, data, title: computedTitle, avatar: computedAvatar };
+            hide(el('chat-empty-state'));
+
+            el('active-chat-avatar').src = computedAvatar;
+            el('active-chat-title').textContent = computedTitle;
+            el('active-chat-status').textContent = type === 'direct' ? 'Пользователь' : 'Групповой чат';
+
+            // Настройка экшенов шапки
+            const actionContainer = el('active-chat-actions');
+            actionContainer.innerHTML = '';
+            if (type === 'group') {
+                actionContainer.innerHTML = `<button id="btn-manage-group" class="hover:text-white transition"><i class="fa-solid fa-users-gear text-lg"></i></button>`;
+                el('btn-manage-group').onclick = () => openGroupManagementModal();
+            }
+
+            // Переподписка на сообщения
+            if (activeListeners.messages) activeListeners.messages();
+            const qMsg = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
+            
+            let initialLoad = true;
+            activeListeners.messages = onSnapshot(qMsg, (snap) => {
+                const area = el('messages-area');
+                area.innerHTML = '';
+                
+                snap.forEach(docSnap => {
+                    renderSingleMessage(docSnap.id, docSnap.data());
+                });
+                
+                area.scrollTop = area.scrollHeight;
+
+                if (!initialLoad) {
+                    playNotificationSound('msg');
+                }
+                initialLoad = false;
+            });
+
+            // Отслеживание закрепленного сообщения
+            if (activeListeners.pinned) activeListeners.pinned();
+            activeListeners.pinned = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
+                const cData = dSnap.data();
+                if (cData?.pinnedMessageId) {
+                    getDoc(doc(db, "chats", chatId, "messages", cData.pinnedMessageId)).then(mSnap => {
+                        if (mSnap.exists()) {
+                            el('pinned-text').textContent = mSnap.data().text || "Медиафайл";
+                            show(el('pinned-message-bar'));
+                            el('btn-jump-pinned').onclick = () => {
+                                const element = document.getElementById(`msg-${mSnap.id}`);
+                                if (element) element.scrollIntoView({ behavior: 'smooth' });
+                            };
+                        }
+                    });
+                } else {
+                    hide(el('pinned-message-bar'));
+                }
+            });
+
+            // Индикатор печати
+            if (activeListeners.typing) activeListeners.typing();
+            activeListeners.typing = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
+                const cData = dSnap.data();
+                if (cData && cData.typing && cData.typing !== me.uid) {
+                    getDoc(doc(db, "users", cData.typing)).then(uSnap => {
+                        if (uSnap.exists()) {
+                            el('typing-text').textContent = `${uSnap.data().displayName} печатает...`;
+                            show(el('typing-indicator-bar'));
+                        }
+                    });
+                } else {
+                    hide(el('typing-indicator-bar'));
+                }
+            });
+        }
+
+        // Рендеринг единичного сообщения
+        function renderSingleMessage(msgId, msg) {
+            const area = el('messages-area');
+            const isMe = msg.senderId === me.uid;
+
+            const msgDiv = document.createElement('div');
+            msgDiv.id = `msg-${msgId}`;
+            msgDiv.className = `flex w-full gap-3 ${isMe ? 'justify-end' : 'justify-start'}`;
+
+            // Сборка метаданных ответа
+            let replyBlockHTML = '';
+            if (msg.replyTo) {
+                replyBlockHTML = `
+                    <div class="bg-black bg-opacity-30 p-1.5 rounded text-[11px] mb-1 text-textMuted border-l-2 border-gray-500 truncate max-w-xs">
+                        <i class="fa-solid fa-share mr-1"></i> ${msg.replyTo.senderName}: ${msg.replyTo.text}
+                    </div>
+                `;
+            }
+
+            // Сборка контента
+            let bodyHTML = `<p class="text-sm select-text whitespace-pre-wrap">${msg.text || ''}</p>`;
+            if (msg.type === 'image') {
+                bodyHTML = `
+                    <div class="flex flex-col gap-1">
+                        <img src="${msg.fileUrl}" class="rounded max-w-xs max-h-60 object-cover cursor-zoom-in bg-brandBg border border-gray-700" onclick="window.openFullImage('${msg.fileUrl}')">
+                        ${msg.text ? `<p class="text-sm select-text mt-1">${msg.text}</p>` : ''}
+                    </div>
+                `;
+            } else if (msg.type === 'file') {
+                bodyHTML = `
+                    <div class="flex items-center gap-3 bg-brandBg p-2 rounded.md border border-gray-800">
+                        <i class="fa-solid fa-file-shield text-2xl text-accentBtn"></i>
+                        <div class="overflow-hidden max-w-xs">
+                            <p class="text-xs font-bold text-white truncate">${msg.fileName}</p>
+                            <a href="${msg.fileUrl}" target="_blank" download class="text-[10px] text-accentBtn hover:underline"><i class="fa-solid fa-download mr-1"></i>Скачать файл</a>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const timeString = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
+
+            msgDiv.innerHTML = `
+                <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[70%] group">
+                    <span class="text-[10px] text-textMuted mb-0.5 px-1">${msg.senderName}</span>
+                    <div class="p-3 rounded-lg relative ${isMe ? 'bg-accentBtn text-white rounded-br-none' : 'bg-sidebarBg text-textMain rounded-bl-none'} shadow">
+                        ${replyBlockHTML}
+                        ${bodyHTML}
+                        <div class="flex items-center justify-end gap-1 mt-1 text-[9px] text-textMuted select-none">
+                            ${msg.isEdited ? '<span class="italic text-[8px]">(ред.)</span>' : ''}
+                            <span>${timeString}</span>
+                            ${isMe ? '<i class="fa-solid fa-check-double text-green-400 ml-0.5"></i>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Подключение контекстного меню
+            msgDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                openMessageContextMenu(e.clientX, e.clientY, msgId, msg);
+            });
+
+            area.appendChild(msgDiv);
+        }
+
+        // Логика контекстного меню сообщений
+        function openMessageContextMenu(x, y, msgId, msg) {
+            const menu = el('msg-context-menu');
+            show(menu);
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+
+            contextedMessage = { id: msgId, data: msg };
+
+            // Управление видимостью кнопок
+            const isMyMsg = msg.senderId === me.uid;
+            if (isMyMsg) { show(el('ctx-edit')); show(el('ctx-delete')); } 
+            else { hide(el('ctx-edit')); hide(el('ctx-delete')); }
+        }
+
+        // Закрытие контекстного меню при любом клике
+        document.addEventListener('click', () => hide(el('msg-context-menu')));
+
+        // Экшены контекстного меню
+        el('ctx-reply').onclick = () => {
+            replyingToMessage = contextedMessage;
+            el('reply-user-name').textContent = replyingToMessage.data.senderName;
+            el('reply-msg-text').textContent = replyingToMessage.data.text || '[Медиафайлы]';
+            show(el('reply-preview-bar'));
+            el('input-message').focus();
+        };
+
+        el('btn-cancel-reply').onclick = () => {
+            replyingToMessage = null;
+            hide(el('reply-preview-bar'));
+        };
+
+        el('ctx-copy').onclick = () => {
+            if (contextedMessage?.data.text) {
+                navigator.clipboard.writeText(contextedMessage.data.text);
+                toast("Текст скопирован в буфер");
+            }
+        };
+
+        el('ctx-delete').onclick = async () => {
+            if (confirm("Удалить это сообщение для всех?")) {
+                await deleteDoc(doc(db, "chats", activeChat.id, "messages", contextedMessage.id));
+                toast("Сообщение удалено");
+            }
+        };
+
+        el('ctx-edit').onclick = () => {
+            if (contextedMessage?.data.type !== 'text') return;
+            const newText = prompt("Редактировать сообщение:", contextedMessage.data.text);
+            if (newText && newText.trim() !== contextedMessage.data.text) {
+                updateDoc(doc(db, "chats", activeChat.id, "messages", contextedMessage.id), {
+                    text: newText.trim(),
+                    isEdited: true
+                });
+            }
+        };
+
+        el('ctx-pin').onclick = async () => {
+            const chatRef = doc(db, "chats", activeChat.id);
+            if (activeChat.data.pinnedMessageId === contextedMessage.id) {
+                await updateDoc(chatRef, { pinnedMessageId: null });
+                toast("Сообщение откреплено");
+            } else {
+                await updateDoc(chatRef, { pinnedMessageId: contextedMessage.id });
+                toast("Сообщение закреплено");
+            }
+        };
+
+        window.openFullImage = (url) => {
+            el('full-size-image-element').src = url;
+            show(el('modal-image-view'));
+        };
+
+        // Отправка сообщений
+        async function handleMessageSendingFlow() {
+            const text = el('input-message').value.trim();
+            if (!text && !selectedFile) return;
+            if (!activeChat) return;
+
+            // Проверка пасхалки из системного промпта
+            if (text === '😿') {
+                playNotificationSound('meow');
+            }
+
+            el('input-message').value = '';
+            hide(el('emoji-picker'));
+
+            let payload = {
+                senderId: me.uid,
+                senderName: me.displayName,
+                createdAt: serverTimestamp(),
+                replyTo: replyingToMessage ? { msgId: replyingToMessage.id, text: replyingToMessage.data.text || '[Файл]', senderName: replyingToMessage.data.senderName } : null
+            };
+
+            if (selectedFile) {
+                show(el('upload-progress-container'));
+                const fileRef = ref(storage, `chats/${activeChat.id}/${Date.now()}_${selectedFile.name}`);
+                const uploadTask = uploadBytesResumable(fileRef, selectedFile);
+
+                uploadTask.on('state_changed', 
+                    (snap) => {
+                        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+                        el('upload-progress-bar').style.width = `${progress}%`;
+                    },
+                    (err) => { toast(err.message, true); hide(el('upload-progress-container')); },
+                    async () => {
+                        const url = await getDownloadURL(uploadTask.snapshot.ref);
+                        payload.type = selectedFile.type.startsWith('image/') ? 'image' : 'file';
+                        payload.fileUrl = url;
+                        payload.fileName = selectedFile.name;
+                        payload.text = text; // Описание к картинке/файлу, если есть
+                        
+                        await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
+                        await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text ? text : `📎 ${selectedFile.name}`, updatedAt: serverTimestamp() });
+                        
+                        resetFilePreviewState();
+                    }
+                );
+            } else {
+                payload.type = 'text';
+                payload.text = text;
+
+                await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
+                await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text, updatedAt: serverTimestamp() });
+            }
+
+            if (replyingToMessage) {
+                replyingToMessage = null;
+                hide(el('reply-preview-bar'));
+            }
+        }
+
+        el('btn-send-message').onclick = handleMessageSendingFlow;
+        el('input-message').onkeydown = (e) => { if(e.key === 'Enter') handleMessageSendingFlow(); };
+
+        // Индикатор "Печатает..." (Debounce инпута)
+        el('input-message').addEventListener('input', () => {
+            if (!activeChat) return;
+            updateDoc(doc(db, "chats", activeChat.id), { typing: me.uid });
+            
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                updateDoc(doc(db, "chats", activeChat.id), { typing: null });
+            }, 1500);
+        });
+
+        // Файловый менеджмент
+        el('btn-trigger-upload').onclick = () => el('input-file-select').click();
+        el('input-file-select').onchange = (e) => {
+            if (e.target.files.length > 0) setupFileForPreview(e.target.files[0]);
+        };
+
+        function setupFileForPreview(file) {
+            selectedFile = file;
+            el('preview-file-name').textContent = file.name;
+            el('preview-file-size').textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+            show(el('file-preview-bar'));
+        }
+
+        function resetFilePreviewState() {
+            selectedFile = null;
+            hide(el('file-preview-bar'));
+            hide(el('upload-progress-container'));
+            el('upload-progress-bar').style.width = '0%';
+            el('input-file-select').value = '';
+        }
+        el('btn-cancel-file').onclick = resetFilePreviewState;
+
+        // Панель эмодзи
+        el('btn-emoji').onclick = () => el('emoji-picker').classList.toggle('hidden');
+        document.querySelectorAll('.emoji-item').forEach(btn => {
+            btn.onclick = () => {
+                el('input-message').value += btn.textContent;
+                el('input-message').focus();
+            };
+        });
+
+        // Драг-энд-дроп файлов в окно чата
+        const chatWindow = el('chat-window');
+        chatWindow.addEventListener('dragover', (e) => { e.preventDefault(); chatWindow.classList.add('opacity-75'); });
+        chatWindow.addEventListener('dragleave', () => chatWindow.classList.remove('opacity-75'));
+        chatWindow.addEventListener('drop', (e) => {
+            e.preventDefault();
+            chatWindow.classList.remove('opacity-75');
+            if(e.dataTransfer.files.length > 0) setupFileForPreview(e.dataTransfer.files[0]);
+        });
+
+        // Управление модальными окнами: Мой профиль
+        el('ui-my-profile-trigger').onclick = () => {
+            el('modal-profile-avatar').src = me.photoURL;
+            el('modal-profile-email').textContent = me.email;
+            el('modal-profile-name').value = me.displayName;
+            el('modal-profile-username').value = me.username;
+            el('modal-profile-bio').value = me.bio || '';
+            el('modal-profile-joined').textContent = `В системе с: ${me.createdAt ? new Date(me.createdAt.toDate()).toLocaleDateString() : '...'}`;
+            show(el('modal-profile'));
+        };
+
+        // Загрузка нового аватара для профиля
+        el('avatar-upload-trigger').onclick = () => el('input-avatar-file').click();
+        el('input-avatar-file').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const fileRef = ref(storage, `avatars/${me.uid}`);
+            toast("Загрузка аватара...");
+            await uploadBytesResumable(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+            
+            el('modal-profile-avatar').src = url;
+            await updateDoc(doc(db, "users", me.uid), { photoURL: url });
+            me.photoURL = url;
+            el('ui-my-avatar').src = url;
+            toast("Аватар успешно обновлен");
+        };
+
+        // Сохранение изменений текстового профиля с проверкой уникальности никнейма
+        el('btn-save-profile').onclick = async () => {
+            const name = el('modal-profile-name').value.trim();
+            const username = el('modal-profile-username').value.trim().toLowerCase();
+            const bio = el('modal-profile-bio').value.trim();
+
+            if (!name || username.length < 3) { toast("Заполните корректно обязательные поля", true); return; }
+
+            if (username !== me.username) {
+                const q = query(collection(db, "users"), where("username", "==", username));
+                const res = await getDocs(q);
+                if (!res.empty) { toast("Этот никнейм уже занят другого пользователя", true); return; }
+            }
+
+            const upPayload = { displayName: name, username, bio };
+            await updateDoc(doc(db, "users", me.uid), upPayload);
+            me = { ...me, ...upPayload };
+            
+            el('ui-my-name').textContent = name;
+            el('ui-my-username').textContent = `@${username}`;
+            hide(el('modal-profile'));
+            toast("Профиль сохранен");
+        };
+
+        // Модалка просмотра чужого юзер-профиля
+        async function openUserProfileModal(user) {
+            el('view-user-avatar').src = user.photoURL;
+            el('view-user-name').textContent = user.displayName;
+            el('view-user-username').textContent = `@${user.username}`;
+            el('view-user-bio').textContent = user.bio || 'Описание отсутствует';
+            el('view-user-status').textContent = user.isOnline ? 'В сети (Онлайн)' : 'Не в сети (Офлайн)';
+
+            const actionContainer = el('view-user-actions');
+            actionContainer.innerHTML = '';
+
+            // Определение связи (Уже друзья или отправлен запрос)
+            const qReq1 = query(collection(db, "friend_requests"), where("fromId", "==", me.uid), where("toId", "==", user.uid));
+            const qReq2 = query(collection(db, "friend_requests"), where("fromId", "==", user.uid), where("toId", "==", me.uid));
+            const [snapReq1, snapReq2] = await Promise.all([getDocs(qReq1), getDocs(qReq2)]);
+
+            let hasPendingRequest = !snapReq1.empty || !snapReq2.empty;
+
+            // Проверка дружбы
+            const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid), where("user2", "==", user.uid));
+            const qF2 = query(collection(db, "friendships"), where("user1", "==", user.uid), where("user2", "==", me.uid));
+            const [snapF1, snapF2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
+            
+            let isFriend = !snapF1.empty || !snapF2.empty;
+
+            if (isFriend) {
+                actionContainer.innerHTML = `<button class="w-full bg-red-600 hover:bg-red-700 p-2 rounded text-xs font-bold text-white" id="btn-action-unfriend">Удалить из друзей</button>`;
+                el('btn-action-unfriend').onclick = async () => {
+                    snapF1.forEach(async d => await deleteDoc(doc(db, "friendships", d.id)));
+                    snapF2.forEach(async d => await deleteDoc(doc(db, "friendships", d.id)));
+                    toast("Удален из списка друзей");
+                    hide(el('modal-user-view'));
+                    renderSidebarData();
+                };
+            } else if (hasPendingRequest) {
+                actionContainer.innerHTML = `<button class="w-full bg-gray-600 p-2 rounded text-xs font-bold text-white cursor-not-allowed" disabled>Заявка на рассмотрении</button>`;
+            } else {
+                actionContainer.innerHTML = `<button class="w-full bg-accentBtn hover:bg-accentHover p-2 rounded text-xs font-bold text-white" id="btn-action-addfriend">Добавить в друзья</button>`;
+                el('btn-action-addfriend').onclick = async () => {
+                    await addDoc(collection(db, "friend_requests"), { fromId: me.uid, toId: user.uid, status: "pending", createdAt: serverTimestamp() });
+                    toast("Заявка отправлена");
+                    hide(el('modal-user-view'));
+                };
+            }
+
+            show(el('modal-user-view'));
+        }
+
+        // Управление групповыми чатами (Создание)
+        el('btn-open-group-modal').onclick = async () => {
+            el('modal-group-title').textContent = "Создание группы";
+            el('modal-group-name').value = '';
+            hide(el('modal-group-members-management'));
+            show(el('btn-submit-group'));
+            el('btn-submit-group').textContent = "Создать группу";
+
+            // Сбор списка друзей для добавления в новую группу
+            const container = el('modal-group-friends-list');
+            container.innerHTML = '';
+            
+            const qF1 = query(collection(db, "friendships"), where("user1", "==", me.uid));
+            const qF2 = query(collection(db, "friendships"), where("user2", "==", me.uid));
+            const [res1, res2] = await Promise.all([getDocs(qF1), getDocs(qF2)]);
+            
+            const friendIds = [];
+            res1.forEach(d => friendIds.push(d.data().user2));
+            res2.forEach(d => friendIds.push(d.data().user1));
+
+            for (const fId of friendIds) {
+                const uSnap = await getDoc(doc(db, "users", fId));
+                if (uSnap.exists()) {
+                    const u = uSnap.data();
+                    const label = document.createElement('label');
+                    label.className = "flex items-center gap-2 text-xs text-textMain p-1 hover:bg-gray-700 rounded cursor-pointer";
+                    label.innerHTML = `<input type="checkbox" class="group-checkbox" value="${u.uid}"> <span>${u.displayName} (@${u.username})</span>`;
+                    container.appendChild(label);
+                }
+            }
+
+            el('btn-submit-group').onclick = async () => {
+                const name = el('modal-group-name').value.trim();
+                if(!name) { toast("Укажите название группы", true); return; }
+
+                const selectedIds = [me.uid];
+                document.querySelectorAll('.group-checkbox:checked').forEach(input => selectedIds.push(input.value));
+
+                const newGroupChat = {
+                    type: 'group',
+                    name: name,
+                    photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4f545c&color=fff`,
+                    adminId: me.uid,
+                    participants: selectedIds,
+                    updatedAt: serverTimestamp(),
+                    lastMessage: 'Группа успешно создана',
+                    pinnedMessageId: null
+                };
+
+                await addDoc(collection(db, "chats"), newGroupChat);
+                toast("Группа создана");
+                hide(el('modal-group'));
+            };
+
+            show(el('modal-group'));
+        };
+
+        // Управление участниками группы для админа
+        async function openGroupManagementModal() {
+            if (activeChat.data.adminId !== me.uid) {
+                toast("У вас нет прав администратора для управления", true);
+                return;
+            }
+
+            el('modal-group-title').textContent = "Управление группой";
+            el('modal-group-name').value = activeChat.data.name;
+            hide(el('btn-submit-group'));
+            show(el('modal-group-members-management'));
+
+            const container = el('modal-group-current-members');
+            container.innerHTML = '';
+
+            for (const pId of activeChat.data.participants) {
+                if (pId === me.uid) continue;
+                const uSnap = await getDoc(doc(db, "users", pId));
+                if (uSnap.exists()) {
+                    const u = uSnap.data();
+                    const div = document.createElement('div');
+                    div.className = "flex justify-between items-center bg-brandBg p-1.5 rounded text-xs text-white";
+                    div.innerHTML = `<span>${u.displayName}</span> <button class="bg-red-600 p-1 px-2 rounded text-[10px]" id="kick-${u.uid}">Исключить</button>`;
+                    container.appendChild(div);
+
+                    el(`kick-${u.uid}`).onclick = async () => {
+                        const updatedParticipants = activeChat.data.participants.filter(id => id !== u.uid);
+                        await updateDoc(doc(db, "chats", activeChat.id), { participants: updatedParticipants });
+                        activeChat.data.participants = updatedParticipants;
+                        toast(`Пользователь ${u.displayName} исключен`);
+                        openGroupManagementModal(); // Обновляем
+                    };
+                }
+            }
+            show(el('modal-group'));
+        }
+
+        // Общие закрывашки для всех модальных окон
+        document.querySelectorAll('.modal-close').forEach(btn => {
+            btn.onclick = (e) => e.target.closest('.fixed').classList.add('hidden');
+        });
+
+        function setupGlobalEventListeners() {
+            // Закрытие контекстного клика по экрану
+            window.addEventListener('resize', () => hide(el('msg-context-menu')));
         }
     </script>
 </body>
