@@ -470,7 +470,9 @@
             }
         }
 
-        // Валидация уникальности никнейма в реальном времени (защита от повторной привязки)
+        // Валидация никнейма: кнопка включается при корректном формате.
+        // Проверка уникальности — soft (статус), жёсткая проверка только при отправке.
+        // Это чинит баг, когда Firestore rules/индекс блокируют query и кнопка навсегда disabled.
         let usernameValidationAttached = false;
         function setupUsernameValidationLogic() {
             if (usernameValidationAttached) return;
@@ -497,20 +499,25 @@
                     return;
                 }
 
+                // Формат ок — сразу включаем кнопку (раньше ждали только успешного getDocs)
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                status.textContent = "Проверяем доступность..."; status.className = "text-yellow-400 text-xs mt-1 font-semibold"; show(status);
+
                 timer = setTimeout(async () => {
                     try {
                         const q = query(collection(db, "users"), where("username", "==", val));
                         const res = await getDocs(q);
                         if (!res.empty) {
                             status.textContent = "Этот никнейм уже занят"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
+                            // Не блокируем кнопку окончательно — на submit ещё раз проверим
                         } else {
                             status.textContent = "Никнейм свободен!"; status.className = "text-green-400 text-xs mt-1 font-semibold"; show(status);
-                            btn.disabled = false;
-                            btn.classList.remove('opacity-50', 'cursor-not-allowed');
                         }
                     } catch (err) {
-                        status.textContent = "Ошибка проверки никнейма"; status.className = "text-red-400 text-xs mt-1 font-semibold"; show(status);
-                        console.error(err);
+                        // permission-denied / missing index и т.п. — не блокируем UI
+                        status.textContent = "Проверка недоступна (можно попробовать)"; status.className = "text-yellow-400 text-xs mt-1 font-semibold"; show(status);
+                        console.warn("Username check failed (rules/index?):", err);
                     }
                 }, 400);
             });
@@ -536,13 +543,28 @@
             btn.disabled = true;
             btn.textContent = "Создание аккаунта...";
             btn.classList.add('opacity-50', 'cursor-not-allowed');
-            statusEl.textContent = "Пишем в Firestore... подожди";
+            statusEl.textContent = "Проверяем никнейм...";
             statusEl.className = "text-yellow-400 text-xs mt-1 font-semibold";
             show(statusEl);
 
             let success = false;
 
             try {
+                // Жёсткая проверка уникальности перед записью (если rules позволяют)
+                try {
+                    const q = query(collection(db, "users"), where("username", "==", username));
+                    const res = await getDocs(q);
+                    if (!res.empty) {
+                        statusEl.textContent = "Этот никнейм уже занят";
+                        statusEl.className = "text-red-400 text-xs mt-1 font-semibold";
+                        toast("Никнейм уже занят, выберите другой", true);
+                        return;
+                    }
+                } catch (checkErr) {
+                    console.warn("Uniqueness check skipped (rules?):", checkErr);
+                    // Продолжаем — setDoc всё равно сработает, дубликаты редки при нормальных rules
+                }
+
                 statusEl.textContent = `UID: ${user.uid.slice(0,10)}... пишем`;
 
                 const payload = {
@@ -557,7 +579,6 @@
                     lastSeen: serverTimestamp()
                 };
 
-                // Без искусственного таймаута — Firebase сам вернёт реальную ошибку
                 await setDoc(doc(db, "users", user.uid), payload);
 
                 statusEl.textContent = "Аккаунт создан ✓";
@@ -569,6 +590,8 @@
                 } catch (readErr) {
                     me = { ...payload, createdAt: new Date(), lastSeen: new Date() };
                 }
+                // Гарантируем uid
+                if (!me.uid) me.uid = user.uid;
 
                 success = true;
                 hide(el('screen-auth'));
@@ -597,6 +620,12 @@
         // Запуск интерфейса
         function startApplication() {
             try {
+                if (!me) {
+                    toast("Данные пользователя не загружены", true);
+                    return;
+                }
+                if (!me.uid && auth.currentUser) me.uid = auth.currentUser.uid;
+
                 hide(el('screen-auth'));
                 hide(el('screen-setup'));
                 show(el('screen-app'));
@@ -890,7 +919,7 @@
                 el('btn-manage-group').onclick = () => openGroupManagementModal();
             }
 
-            if (activeListeners.messages) activeListeners.messages();
+            if (activeListeners.messages) { activeListeners.messages(); activeListeners.messages = null; }
             const qMsg = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
             
             let initialLoad = true;
@@ -904,16 +933,31 @@
                 
                 area.scrollTop = area.scrollHeight;
 
+                // Звук только на новые сообщения от других (не на свои и не на initial)
                 if (!initialLoad) {
-                    playNotificationSound('msg');
+                    const changes = snap.docChanges();
+                    const hasNewFromOther = changes.some(c => c.type === 'added' && c.doc.data().senderId !== me.uid);
+                    if (hasNewFromOther) {
+                        playNotificationSound('msg');
+                    }
                 }
                 initialLoad = false;
+            }, (err) => {
+                console.error("Messages snapshot error:", err);
+                toast("Ошибка загрузки сообщений", true);
             });
 
-            if (activeListeners.pinned) activeListeners.pinned();
-            activeListeners.pinned = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
+            // Один слушатель на метаданные чата (pinned + typing) вместо двух
+            if (activeListeners.chatMeta) { activeListeners.chatMeta(); activeListeners.chatMeta = null; }
+            if (activeListeners.pinned) { activeListeners.pinned(); activeListeners.pinned = null; }
+            if (activeListeners.typing) { activeListeners.typing(); activeListeners.typing = null; }
+
+            activeListeners.chatMeta = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
                 const cData = dSnap.data();
-                if (cData?.pinnedMessageId) {
+                if (!cData) return;
+
+                // Pinned
+                if (cData.pinnedMessageId) {
                     getDoc(doc(db, "chats", chatId, "messages", cData.pinnedMessageId)).then(mSnap => {
                         if (mSnap.exists()) {
                             el('pinned-text').textContent = mSnap.data().text || "Медиафайл";
@@ -922,23 +966,22 @@
                                 const element = document.getElementById(`msg-${mSnap.id}`);
                                 if (element) element.scrollIntoView({ behavior: 'smooth' });
                             };
+                        } else {
+                            hide(el('pinned-message-bar'));
                         }
-                    });
+                    }).catch(() => hide(el('pinned-message-bar')));
                 } else {
                     hide(el('pinned-message-bar'));
                 }
-            });
 
-            if (activeListeners.typing) activeListeners.typing();
-            activeListeners.typing = onSnapshot(doc(db, "chats", chatId), (dSnap) => {
-                const cData = dSnap.data();
-                if (cData && cData.typing && cData.typing !== me.uid) {
+                // Typing
+                if (cData.typing && cData.typing !== me.uid) {
                     getDoc(doc(db, "users", cData.typing)).then(uSnap => {
                         if (uSnap.exists()) {
                             el('typing-text').textContent = `${uSnap.data().displayName} печатает...`;
                             show(el('typing-indicator-bar'));
                         }
-                    });
+                    }).catch(() => hide(el('typing-indicator-bar')));
                 } else {
                     hide(el('typing-indicator-bar'));
                 }
@@ -1117,7 +1160,11 @@
                         payload.text = text;
                         
                         await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
-                        await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text ? text : `📎 ${selectedFile.name}`, updatedAt: serverTimestamp() });
+                        await updateDoc(doc(db, "chats", activeChat.id), { 
+                            lastMessage: text ? text : `📎 ${selectedFile.name}`, 
+                            updatedAt: serverTimestamp(),
+                            typing: null
+                        });
                         
                         resetFilePreviewState();
                     }
@@ -1127,8 +1174,16 @@
                 payload.text = text;
 
                 await addDoc(collection(db, "chats", activeChat.id, "messages"), payload);
-                await updateDoc(doc(db, "chats", activeChat.id), { lastMessage: text, updatedAt: serverTimestamp() });
+                await updateDoc(doc(db, "chats", activeChat.id), { 
+                    lastMessage: text, 
+                    updatedAt: serverTimestamp(),
+                    typing: null
+                });
             }
+
+            // Сбрасываем локальный таймаут typing
+            clearTimeout(typingTimeout);
+            typingTimeout = null;
 
             if (replyingToMessage) {
                 replyingToMessage = null;
@@ -1222,22 +1277,34 @@
             const username = el('modal-profile-username').value.trim().toLowerCase();
             const bio = el('modal-profile-bio').value.trim();
 
-            if (!name || username.length < 3) { toast("Заполните корректно обязательные поля", true); return; }
-
-            if (username !== me.username) {
-                const q = query(collection(db, "users"), where("username", "==", username));
-                const res = await getDocs(q);
-                if (!res.empty) { toast("Этот никнейм уже занят другого пользователя", true); return; }
+            if (!name || username.length < 3 || /[^a-z0-9_]/.test(username)) { 
+                toast("Заполните корректно обязательные поля (ник: a-z0-9_ мин. 3)", true); 
+                return; 
             }
 
-            const upPayload = { displayName: name, username, bio };
-            await updateDoc(doc(db, "users", me.uid), upPayload);
-            me = { ...me, ...upPayload };
-            
-            el('ui-my-name').textContent = name;
-            el('ui-my-username').textContent = `@${username}`;
-            hide(el('modal-profile'));
-            toast("Профиль сохранен");
+            if (username !== me.username) {
+                try {
+                    const q = query(collection(db, "users"), where("username", "==", username));
+                    const res = await getDocs(q);
+                    if (!res.empty) { toast("Этот никнейм уже занят другого пользователя", true); return; }
+                } catch (e) {
+                    console.warn("Username uniqueness check failed:", e);
+                    // Продолжаем — лучше сохранить, чем заблокировать
+                }
+            }
+
+            try {
+                const upPayload = { displayName: name, username, bio };
+                await updateDoc(doc(db, "users", me.uid), upPayload);
+                me = { ...me, ...upPayload };
+                
+                el('ui-my-name').textContent = name;
+                el('ui-my-username').textContent = `@${username}`;
+                hide(el('modal-profile'));
+                toast("Профиль сохранен");
+            } catch (err) {
+                toast("Ошибка сохранения: " + (err.code || err.message), true);
+            }
         };
 
         // Модалка просмотра чужого юзер-профиля
@@ -1287,7 +1354,30 @@
         }
 
         // Управление групповыми чатами
+        // Временный файл аватара группы (до создания)
+        let pendingGroupAvatarFile = null;
+        let groupAvatarListenersAttached = false;
+
+        function setupGroupAvatarListeners() {
+            if (groupAvatarListenersAttached) return;
+            groupAvatarListenersAttached = true;
+            el('group-avatar-upload-trigger').onclick = () => el('input-group-avatar-file').click();
+            el('input-group-avatar-file').onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                pendingGroupAvatarFile = file;
+                // Превью локально
+                const url = URL.createObjectURL(file);
+                el('modal-group-avatar').src = url;
+            };
+        }
+
         el('btn-open-group-modal').onclick = async () => {
+            setupGroupAvatarListeners();
+            pendingGroupAvatarFile = null;
+            el('modal-group-avatar').src = "https://ui-avatars.com/api/?name=Group&background=4f545c&color=fff";
+            el('input-group-avatar-file').value = '';
+
             el('modal-group-title').textContent = "Создание группы";
             el('modal-group-name').value = '';
             hide(el('modal-group-members-management'));
@@ -1323,10 +1413,25 @@
                 const selectedIds = [me.uid];
                 document.querySelectorAll('.group-checkbox:checked').forEach(input => selectedIds.push(input.value));
 
+                let photoURL = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4f545c&color=fff`;
+
+                // Если выбран файл — загружаем
+                if (pendingGroupAvatarFile) {
+                    try {
+                        toast("Загрузка аватара группы...");
+                        const fileRef = ref(storage, `group_avatars/${Date.now()}_${pendingGroupAvatarFile.name}`);
+                        await uploadBytesResumable(fileRef, pendingGroupAvatarFile);
+                        photoURL = await getDownloadURL(fileRef);
+                    } catch (upErr) {
+                        console.warn("Group avatar upload failed:", upErr);
+                        toast("Не удалось загрузить аватар, используем стандартный", true);
+                    }
+                }
+
                 const newGroupChat = {
                     type: 'group',
                     name: name,
-                    photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4f545c&color=fff`,
+                    photoURL: photoURL,
                     adminId: me.uid,
                     participants: selectedIds,
                     updatedAt: serverTimestamp(),
@@ -1336,6 +1441,7 @@
 
                 await addDoc(collection(db, "chats"), newGroupChat);
                 toast("Группа создана");
+                pendingGroupAvatarFile = null;
                 hide(el('modal-group'));
             };
 
@@ -1348,9 +1454,42 @@
                 return;
             }
 
+            setupGroupAvatarListeners();
+            pendingGroupAvatarFile = null;
+
             el('modal-group-title').textContent = "Управление группой";
-            el('modal-group-name').value = activeChat.data.name;
-            hide(el('btn-submit-group'));
+            el('modal-group-name').value = activeChat.data.name || '';
+            el('modal-group-avatar').src = activeChat.data.photoURL || "https://ui-avatars.com/api/?name=Group&background=4f545c&color=fff";
+            el('input-group-avatar-file').value = '';
+
+            // Показываем кнопку сохранения для имени/аватара
+            show(el('btn-submit-group'));
+            el('btn-submit-group').textContent = "Сохранить изменения";
+            el('btn-submit-group').onclick = async () => {
+                const name = el('modal-group-name').value.trim();
+                if (!name) { toast("Название не может быть пустым", true); return; }
+
+                const updates = { name };
+                if (pendingGroupAvatarFile) {
+                    try {
+                        toast("Загрузка аватара...");
+                        const fileRef = ref(storage, `group_avatars/${activeChat.id}_${Date.now()}`);
+                        await uploadBytesResumable(fileRef, pendingGroupAvatarFile);
+                        updates.photoURL = await getDownloadURL(fileRef);
+                    } catch (e) {
+                        toast("Ошибка загрузки аватара", true);
+                        return;
+                    }
+                }
+                await updateDoc(doc(db, "chats", activeChat.id), updates);
+                activeChat.data = { ...activeChat.data, ...updates };
+                el('active-chat-title').textContent = name;
+                if (updates.photoURL) el('active-chat-avatar').src = updates.photoURL;
+                toast("Группа обновлена");
+                pendingGroupAvatarFile = null;
+                hide(el('modal-group'));
+            };
+
             show(el('modal-group-members-management'));
 
             const container = el('modal-group-current-members');
